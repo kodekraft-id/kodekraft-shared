@@ -52,13 +52,13 @@ with a comment naming the task that fills it in for real:
 
 | Module | Placeholder today | Real implementation lands in |
 |---|---|---|
-| `src/ownership.ts` | typed stub | `BE-mono-12` |
+| `src/ownership.ts` | **real (`BE-mono-12`, landed)** | — |
 | `src/client.ts` | passthrough stub | `BE-mono-13` |
 | `src/guard.ts` | passthrough stub | `BE-mono-13` |
 | `src/tier.ts` | typed stub | `BE-mono-10` |
 | `bin/check-ownership.mjs` | no-op, always exits 0 | `OPS-mono-14` |
-| `ownership.json` | does not exist yet | `BE-mono-12` |
-| `OWNERSHIP.md` | does not exist yet | `BE-mono-12` |
+| `ownership.json` | **real (`BE-mono-12`, landed)** | — |
+| `OWNERSHIP.md` | does not exist yet — generated render, `OPS-mono-14` | `OPS-mono-14` |
 | `migrations.lock.json` | does not exist yet | `OPS-shared-05` (in this repo) |
 
 The package shell, exports map, build pipeline, and CI are real and passing end-to-end
@@ -80,7 +80,7 @@ reproducible even if a tag were force-moved. **Never pin a branch ref (`#main`).
 
 ```ts
 import { getDb } from "@kodekraft/shared/client";
-import { ownershipStub } from "@kodekraft/shared/ownership"; // stub in v0.1.0
+import { writersOf, writableColumns, tablesFor } from "@kodekraft/shared/ownership"; // real, BE-mono-12
 import { tierStub } from "@kodekraft/shared/tier";            // stub in v0.1.0
 ```
 
