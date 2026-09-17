@@ -10,9 +10,11 @@ describe("writersOf", () => {
     expect(writersOf("admins")).toEqual(["worker-admin"]);
   });
 
-  it("returns both writers for a shared-write table (clients)", () => {
-    expect(writersOf("clients")).toEqual(expect.arrayContaining(["worker-landing", "worker-user"]));
-    expect(writersOf("clients")).toHaveLength(2);
+  it("returns all three writers for a shared-write table (clients)", () => {
+    expect(writersOf("clients")).toEqual(
+      expect.arrayContaining(["worker-landing", "worker-user", "worker-admin"]),
+    );
+    expect(writersOf("clients")).toHaveLength(3);
   });
 
   it("throws for a table with no ownership.json entry (fails closed on an unknown table)", () => {
@@ -31,6 +33,11 @@ describe("writableColumns", () => {
   it("does include activation_token_hash in worker-landing's clients allowlist", () => {
     const columns = writableColumns("clients", "worker-landing");
     expect(columns).toContain("activation_token_hash");
+  });
+
+  it("assigns clients.deleted_at to worker-admin, not worker-user (ops-initiated deletion, not self-service)", () => {
+    expect(writableColumns("clients", "worker-admin")).toContain("deleted_at");
+    expect(writableColumns("clients", "worker-user")).not.toContain("deleted_at");
   });
 
   it("restricts worker-undangan to opened_at/opened_count only on guests", () => {
