@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (tsc --noEmit)
+        run: pnpm typecheck
+
+      - name: Unit tests (vitest run)
+        run: pnpm test
+
+      - name: dist/ freshness check
+        run: |
+          pnpm build
+          if ! git diff --exit-code -- dist; then
+            echo "::error::dist/ is stale relative to src/. Run 'pnpm build' locally and commit the result."
+            exit 1
+          fi
+
+      - name: ownership.json <-> OWNERSHIP.md render-match check
+        run: |
+          echo "SKIPPED (no-op): ownership.json does not exist yet in this repo — it lands"
+          echo "in BE-mono-12, along with the generated OWNERSHIP.md render of it."
+          echo "See project-docs/12-cross-repo-integration-design.md sections 5.4 and 5.5"
+          echo "(rule R6) in the consuming repos for the real check this step will run"
+          echo "once that content exists: regenerate OWNERSHIP.md from ownership.json and"
+          echo "fail the build if the working tree's OWNERSHIP.md differs from the render."
+          echo "This step intentionally does nothing else right now — it is a placeholder,"
+          echo "not a passing check, and must not be read as ownership.json being verified."

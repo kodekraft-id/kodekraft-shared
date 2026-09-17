@@ -1,0 +1,41 @@
+{
+  "name": "@kodekraft/shared",
+  "version": "0.1.0",
+  "description": "Cross-repo contract package for the 4 invitation-worker-* repos: ownership matrix, D1 write guard, and tier capabilities. Consumed as a git-protocol dependency, not published to npm.",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kodekraft-id/kodekraft-shared.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    "./ownership": {
+      "types": "./dist/ownership.d.ts",
+      "import": "./dist/ownership.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    },
+    "./tier": {
+      "types": "./dist/tier.d.ts",
+      "import": "./dist/tier.js"
+    }
+  },
+  "bin": {
+    "kodekraft-check-ownership": "./bin/check-ownership.mjs"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.11"
+  }
+}
