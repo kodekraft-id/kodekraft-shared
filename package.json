@@ -35,6 +35,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "typescript": "^5.9.2",
     "vitest": "^4.1.11"
   }

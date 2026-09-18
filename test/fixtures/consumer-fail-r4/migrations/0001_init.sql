@@ -1,0 +1,1 @@
+CREATE TABLE placeholder (id TEXT PRIMARY KEY);

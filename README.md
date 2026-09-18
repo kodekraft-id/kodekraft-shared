@@ -44,26 +44,24 @@ and are **not** part of this package's surface, on purpose:
   schema would put `admins`/`orders`/`clients` back within import reach of the public,
   unauthenticated worker-undangan Worker).
 
-## Status (v0.1.0 — initial scaffold)
+## Status (v0.1.0)
 
-This is the `OPS-shared-01` scaffolding commit. `src/ownership.ts`, `src/client.ts`,
-`src/tier.ts`, and `src/guard.ts` are **placeholder stubs only** — each is clearly marked
-with a comment naming the task that fills it in for real:
+Started as the `OPS-shared-01` scaffolding commit; most modules now have real
+implementations landed on top of it. `src/tier.ts` and `migrations.lock.json` are the
+remaining open pieces:
 
-| Module | Placeholder today | Real implementation lands in |
-|---|---|---|
-| `src/ownership.ts` | **real (`BE-mono-12`, landed)** | — |
-| `src/client.ts` | passthrough stub | `BE-mono-13` |
-| `src/guard.ts` | passthrough stub | `BE-mono-13` |
-| `src/tier.ts` | typed stub | `BE-mono-10` |
-| `bin/check-ownership.mjs` | no-op, always exits 0 | `OPS-mono-14` |
-| `ownership.json` | **real (`BE-mono-12`, landed)** | — |
-| `OWNERSHIP.md` | does not exist yet — generated render, `OPS-mono-14` | `OPS-mono-14` |
-| `migrations.lock.json` | does not exist yet | `OPS-shared-05` (in this repo) |
+| Module | Status |
+|---|---|
+| `src/ownership.ts` | **real (`BE-mono-12`, landed)** |
+| `src/client.ts` | **real (`BE-mono-13`, landed)** |
+| `src/guard.ts` | **real (`BE-mono-13`, landed)** |
+| `src/tier.ts` | typed stub — real implementation lands in `BE-mono-10` |
+| `bin/check-ownership.mjs` | **real (`OPS-mono-14`, landed)** — R2'/R3/R4/R4-exempt/R5/R7 enforced against a consumer; R1/R6 enforced against this package's own repo. R8 (v0.2, optional) and R7's actual enforcement (pending `migrations.lock.json` below) are open. |
+| `ownership.json` | **real (`BE-mono-12`, landed)** |
+| `OWNERSHIP.md` | **real, generated render (`OPS-mono-14`, landed)** — run `node bin/check-ownership.mjs --fix` to regenerate after any `ownership.json` change |
+| `migrations.lock.json` | still does not exist in this package — lands via `OPS-shared-05`. Until then, `check-ownership`'s R7 rule prints a `R7 SKIPPED` warning and does not fail consumer builds; it activates automatically once the file lands, no consumer change needed. |
 
-The package shell, exports map, build pipeline, and CI are real and passing end-to-end
-against these stubs, so later tasks can land real content without also having to build
-scaffolding.
+The package shell, exports map, build pipeline, and CI are real and passing end-to-end.
 
 ## Consuming this package
 

@@ -40,13 +40,5 @@ jobs:
             exit 1
           fi
 
-      - name: ownership.json <-> OWNERSHIP.md render-match check
-        run: |
-          echo "SKIPPED (no-op): ownership.json does not exist yet in this repo — it lands"
-          echo "in BE-mono-12, along with the generated OWNERSHIP.md render of it."
-          echo "See project-docs/12-cross-repo-integration-design.md sections 5.4 and 5.5"
-          echo "(rule R6) in the consuming repos for the real check this step will run"
-          echo "once that content exists: regenerate OWNERSHIP.md from ownership.json and"
-          echo "fail the build if the working tree's OWNERSHIP.md differs from the render."
-          echo "This step intentionally does nothing else right now — it is a placeholder,"
-          echo "not a passing check, and must not be read as ownership.json being verified."
+      - name: check-ownership (R1 exports map intact, R6 OWNERSHIP.md sync)
+        run: node bin/check-ownership.mjs --check
