@@ -10,5 +10,6 @@
   "0009_orders_activation.sql": "e770dc284338acd049055fbfcaf8d459c2ca4c887f9a97f4a33be4503479db52",
   "0010_template_eternal_grace.sql": "646be4611c0cb75571888875e72ef96a07fc6b7a375fcc92159b98e39a2449e6",
   "0011_wa_template_english_formal.sql": "ba8f308b98cb68aa003a56b86c14dc33daacecbd0de2fa402ce591e103248f7b",
-  "0012_template_now_streaming.sql": "48dfcb7197c2f18599f10bbb802eb7a2c13677af0c5e94f0493c76eb1040e92d"
+  "0012_template_now_streaming.sql": "48dfcb7197c2f18599f10bbb802eb7a2c13677af0c5e94f0493c76eb1040e92d",
+  "0013_orders_idempotency_key.sql": "ae373f21ec2d273a1907038e2ae6006c6b362bf29e659a445f5aee7480425f58"
 }

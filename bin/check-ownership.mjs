@@ -103,6 +103,47 @@ function looksLikeD1BindingCall(line, matchIndex) {
   return words.some((word) => R4_BINDING_WORDS.has(word.toLowerCase()));
 }
 
+// R4 false-positive fix (OPS-shared-21, v0.1.2): blank out comment text before matching, so a
+// doc comment that merely MENTIONS "env.DB"/".batch("/".prepare("/".exec(" in prose (e.g.
+// "buat akun klien ... dalam SATU db.batch (atomik)") doesn't register as a real call. This is a
+// simple stateful strip — line comments truncate the rest of the line, block comments blank
+// out everything between "/*" and "*/" (tracked across lines) — not a full tokenizer, so a "//"
+// or "/*" inside a string literal can still over-strip. That is an accepted trade-off in the
+// safe direction: it can only cause a false NEGATIVE, which R4 already tolerates since it is
+// defense-in-depth on top of guard.ts's runtime Proxy, never the sole enforcement.
+function stripCommentsForR4(rawLines) {
+  const out = [];
+  let inBlock = false;
+  for (const line of rawLines) {
+    let result = "";
+    let i = 0;
+    while (i < line.length) {
+      if (inBlock) {
+        const end = line.indexOf("*/", i);
+        if (end === -1) break;
+        inBlock = false;
+        i = end + 2;
+        continue;
+      }
+      const lineIdx = line.indexOf("//", i);
+      const blockIdx = line.indexOf("/*", i);
+      if (lineIdx === -1 && blockIdx === -1) {
+        result += line.slice(i);
+        break;
+      }
+      if (blockIdx === -1 || (lineIdx !== -1 && lineIdx < blockIdx)) {
+        result += line.slice(i, lineIdx);
+        break;
+      }
+      result += line.slice(i, blockIdx);
+      inBlock = true;
+      i = blockIdx + 2;
+    }
+    out.push(result);
+  }
+  return out;
+}
+
 // R3: any specifier that reaches around the package's `exports` map into its internals.
 const R3_PATTERNS = [
   { re: /@kodekraft\/shared\/src(?:[/'"`]|$)/, label: "@kodekraft/shared/src" },
@@ -356,7 +397,7 @@ function checkR4RawBindingContainment(cwd, kodekraft) {
     const rel = normalizeRel(relative(cwd, abs));
     if (isR4Exempt(rel, compositionRootRel)) continue;
 
-    const lines = readFileSync(abs, "utf8").split("\n");
+    const lines = stripCommentsForR4(readFileSync(abs, "utf8").split("\n"));
     lines.forEach((line, idx) => {
       if (R4_BINDING_ACCESS_RE.test(line)) {
         violations.push(

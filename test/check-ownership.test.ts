@@ -126,6 +126,16 @@ describe("check-ownership.mjs — consumer mode", () => {
     expect(output).toContain(".prepare()/.batch()/.exec() call outside kodekraft.dbCompositionRoot");
   });
 
+  it("R4 does NOT fire on a doc comment (line or block) that merely mentions env.DB/.batch()/.prepare()/.exec() in prose — regression for the v0.1.2 false-positive fix (OPS-shared-21)", () => {
+    const result = run(join(FIXTURES, "consumer-pass"), [], {
+      KODEKRAFT_SHARED_TEST_LOCK_PATH: join(tmpdir(), "does-not-exist-lock.json"),
+    });
+    expect(result.status).toBe(0);
+    const output = result.stdout + result.stderr;
+    expect(output).not.toContain("doc-comment-mentions.ts");
+    expect(output).toContain("no violations found");
+  });
+
   it("R5 fails when the schema mirror defines a table this app is neither a writer nor a reader of", () => {
     const result = run(join(FIXTURES, "consumer-fail-r5"));
     expect(result.status).toBe(1);
