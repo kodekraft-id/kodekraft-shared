@@ -108,6 +108,24 @@ describe("check-ownership.mjs — consumer mode", () => {
     expect(output).not.toContain("gate-ordering.test.ts");
   });
 
+  it("R4 does NOT fire on a regex literal's .exec(), or a variable holding a RegExp's .exec() — regression for the v0.1.1 false-positive fix", () => {
+    const result = run(join(FIXTURES, "consumer-pass"), [], {
+      KODEKRAFT_SHARED_TEST_LOCK_PATH: join(tmpdir(), "does-not-exist-lock.json"),
+    });
+    expect(result.status).toBe(0);
+    const output = result.stdout + result.stderr;
+    expect(output).not.toContain("regex-safe.ts");
+    expect(output).toContain("no violations found");
+  });
+
+  it("R4 still fails on a binding-shaped receiver (\"db\", \"ctx.dbBinding\") calling .batch()/.prepare() outside the composition root, even without the literal substring \"env.DB\"", () => {
+    const result = run(join(FIXTURES, "consumer-fail-r4-method-call"));
+    expect(result.status).toBe(1);
+    const output = result.stdout + result.stderr;
+    expect(output).toMatch(/routes[\\/]sync\.ts:\d+ — \[R4\]/);
+    expect(output).toContain(".prepare()/.batch()/.exec() call outside kodekraft.dbCompositionRoot");
+  });
+
   it("R5 fails when the schema mirror defines a table this app is neither a writer nor a reader of", () => {
     const result = run(join(FIXTURES, "consumer-fail-r5"));
     expect(result.status).toBe(1);

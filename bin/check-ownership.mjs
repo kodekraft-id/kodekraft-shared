@@ -53,7 +53,55 @@ const CODE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", "
 // former as a substring, and \b before "env" still matches right after the preceding ".").
 const R4_BINDING_ACCESS_RE = /\benv\.DB\b/;
 // R4: a D1 handle's statement-execution methods, called anywhere outside the composition root.
-const R4_METHOD_CALL_RE = /\.(?:prepare|batch|exec)\s*\(/;
+//
+// This intentionally does NOT flag every ".prepare("/".batch("/".exec(" call on any receiver —
+// bare method-name matching produced real false positives (found during BE-undangan-07, the
+// first real consumer integration): `RegExp.prototype.exec()` on a regex literal
+// (`/foo/i.exec(...)`) and on a module-level `const OPEN = /foo/; OPEN.exec(...)` variable.
+// `.exec()` in particular is a very common JS/TS regex idiom unrelated to D1 that will appear
+// in almost any real codebase, unlike `.prepare()`/`.batch()`, which have no common non-D1 API
+// using those exact names.
+//
+// A match only counts as a possible D1 binding call if the identifier chain immediately before
+// the method name looks binding-shaped: it contains "db", "database", or "binding" as a whole,
+// camelCase-aware word segment — e.g. "env.DB", "db", "this.dbBinding", "getDb(env)" all match;
+// "OPEN", "pattern", a bare regex literal's flags do not. A match is also excluded outright if
+// the character immediately preceding it is "/" (an unambiguous regex-literal closing slash,
+// e.g. `/foo/.exec(...)` with no flags).
+//
+// Trade-off (this is a pragmatic, regex-based, sub-second tool per the file header — not an
+// AST parser): this can still false-NEGATIVE if a real D1 handle is named something containing
+// none of db/database/binding — acceptable, since R4 is defense-in-depth on top of guard.ts's
+// runtime Proxy, which is what actually blocks a bad write regardless of what this static check
+// catches. It can also still theoretically false-POSITIVE on something like a variable literally
+// named `dbPattern` holding a RegExp — a far rarer collision than "any .exec() call whatsoever",
+// which is what actually broke in practice.
+const R4_METHOD_CALL_RE = /\.(?:prepare|batch|exec)\s*\(/g;
+const R4_BINDING_WORDS = new Set(["db", "database", "binding"]);
+// Matches the dotted identifier/call chain immediately preceding a position in a line, e.g.
+// "env.DB", "db", "this.dbBinding", "getDb(env)" — allows one shallow (non-nested) "(...)" call
+// per segment so "getDb(env).prepare(" resolves its receiver chain correctly.
+const R4_RECEIVER_CHAIN_RE = /([A-Za-z_$][\w$]*(?:\s*\([^()]*\))?(?:\.[A-Za-z_$][\w$]*(?:\s*\([^()]*\))?)*)$/;
+
+function splitIntoWords(segment) {
+  return segment
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+}
+
+// Decides whether a ".prepare("/".batch("/".exec(" match at `matchIndex` in `line` looks like a
+// real D1 binding call, per the trade-off documented above R4_METHOD_CALL_RE.
+function looksLikeD1BindingCall(line, matchIndex) {
+  if (line[matchIndex - 1] === "/") return false; // regex-literal closing slash, e.g. /foo/.exec(...)
+
+  const prefix = line.slice(0, matchIndex);
+  const chainMatch = R4_RECEIVER_CHAIN_RE.exec(prefix);
+  if (!chainMatch) return false;
+
+  const words = chainMatch[1].split(/[.()]+/).flatMap((part) => splitIntoWords(part));
+  return words.some((word) => R4_BINDING_WORDS.has(word.toLowerCase()));
+}
 
 // R3: any specifier that reaches around the package's `exports` map into its internals.
 const R3_PATTERNS = [
@@ -314,7 +362,11 @@ function checkR4RawBindingContainment(cwd, kodekraft) {
         violations.push(
           violation(rel, idx + 1, "R4", `raw D1 binding access ("env.DB") outside kodekraft.dbCompositionRoot ("${kodekraft.dbCompositionRoot}").`),
         );
-      } else if (R4_METHOD_CALL_RE.test(line)) {
+        return;
+      }
+
+      for (const match of line.matchAll(R4_METHOD_CALL_RE)) {
+        if (!looksLikeD1BindingCall(line, match.index)) continue;
         violations.push(
           violation(
             rel,
@@ -323,6 +375,7 @@ function checkR4RawBindingContainment(cwd, kodekraft) {
             `.prepare()/.batch()/.exec() call outside kodekraft.dbCompositionRoot ("${kodekraft.dbCompositionRoot}") — only the composition root may talk to the raw D1 handle.`,
           ),
         );
+        break;
       }
     });
   }

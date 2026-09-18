@@ -195,3 +195,18 @@ pnpm add github:kodekraft-id/kodekraft-shared#v<previous-version>
 
 ...followed by committing the resulting `package.json` + `pnpm-lock.yaml` diff. No rebuild,
 no republish step, because there is no npm registry in this flow at all.
+
+## 6. Version history
+
+- **`v0.1.1`** (patch) — `bin/check-ownership.mjs`'s R4 rule false-positive fix. The bare
+  `.(?:prepare|batch|exec)\s*\(` method-name match fired on any receiver, not just a D1
+  binding — found during `BE-undangan-07` (the first real consumer integration), where it
+  incorrectly flagged `RegExp.prototype.exec()` calls (a regex literal's own `.exec()`, and a
+  module-level `const OPEN = /.../; OPEN.exec(...)` variable) as R4 violations. R4 now only
+  flags a `.prepare()`/`.batch()`/`.exec()` call when the identifier chain immediately before
+  it looks binding-shaped (contains `db`/`database`/`binding` as a whole, camelCase-aware word
+  segment), and excludes matches directly preceded by a regex-literal closing slash (`/`).
+  `ownership.json` and the `exports` map are unchanged — implementation-only, hence patch per
+  §3.
+- **`v0.1.0`** — initial release: ownership matrix, `guard.ts` runtime D1 write guard, `tier.ts`
+  capability map, `check-ownership.mjs` static rule engine (R1-R7).
