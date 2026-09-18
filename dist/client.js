@@ -1,18 +1,102 @@
-// PLACEHOLDER MODULE — scaffolded by OPS-shared-01.
+// Real implementation (BE-mono-13). `getDb(binding, app)` wraps a D1 binding in a Proxy
+// intercepting `prepare`/`batch`/`exec` — the three ways D1 statements get executed — and
+// runs every statement through `guard.ts`'s `guardWrite()` before it reaches the real
+// binding. See project-docs/12-cross-repo-integration-design.md §5.4 for the intended
+// consumer wiring (one `db(env)` composition root per repo).
 //
-// The real implementation lands in BE-mono-13: `getDb(binding, app)` wraps the D1
-// binding in `guard.ts`'s `createGuard()` so every statement Drizzle emits over the
-// returned handle is checked against `ownership.json` at write time. Reads pass through
-// untouched; writes to a table/column this app doesn't own throw
-// `OwnershipViolationError`. See project-docs/12 §5.4.
-//
-// This stub exists only so the package's exports map (`./client`), build pipeline, and
-// CI have a real module to compile, bundle, and test end-to-end during v0.1 scaffolding.
-// It currently does NOT enforce anything — do not wire this into a real Worker yet.
+// This package does not depend on `@cloudflare/workers-types` (kept dependency-free per
+// doc 12 §5.4's "no secrets, minimal footprint" framing), so the D1 shapes below are a
+// minimal structural subset of the real `D1Database`/`D1PreparedStatement` types. Every
+// consumer's own generated Worker types are structurally compatible with these — no cast
+// beyond the generic `TBinding` return type is needed at the call site.
+import { enforceViolation, guardWrite } from "./guard.js";
+export { OwnershipViolationError } from "./guard.js";
+/** Sentinel table name used by the guard when a batch() statement's SQL can't be recovered. */
+const UNTRACKED_BATCH_STATEMENT_TABLE = "<untracked-batch-statement>";
 /**
- * Placeholder stub for the real `getDb(binding, app)` guard wrapper (BE-mono-13).
- * Currently just returns the binding unchanged — this is NOT a real ownership guard.
+ * Wraps a real (or host-provided) function value so it always runs against `target`, never
+ * against whatever `this` the caller invoked it through. Proxying a native/host object (D1's
+ * real binding, backed by workerd internals) and returning its methods unbound risks an
+ * "illegal invocation"-style failure if a caller ever does `const f = db.someMethod; f()` or
+ * if the runtime relies on private internal slots only present on the real instance — this
+ * keeps every passthrough method safe regardless of how it's later called.
  */
-export function getDb(binding, _app) {
-    return binding;
+function bindToTarget(target, value) {
+    return typeof value === "function" ? value.bind(target) : value;
+}
+function wrapPreparedStatement(real, sql, sqlByStatement, realByStatement) {
+    const proxy = new Proxy(real, {
+        get(target, prop, _receiver) {
+            if (prop === "bind") {
+                return (...args) => {
+                    const bound = target.bind(...args);
+                    return wrapPreparedStatement(bound, sql, sqlByStatement, realByStatement);
+                };
+            }
+            return bindToTarget(target, Reflect.get(target, prop, target));
+        },
+    });
+    sqlByStatement.set(proxy, sql);
+    realByStatement.set(proxy, real);
+    return proxy;
+}
+/** Splits a multi-statement `exec()` query into the individual statements D1 executes. */
+function splitExecStatements(query) {
+    return query
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+}
+/**
+ * Returns `binding` wrapped in a Proxy that guards every write statement against
+ * `ownership.json` before it reaches D1. Reads pass through untouched. Intended to be the
+ * only place a consuming repo's composition root names `env.DB` — construct Drizzle over
+ * the returned handle (`drizzle(getDb(env.DB, "worker-landing"), { schema })`), not the raw
+ * binding, so every statement Drizzle emits is checked.
+ */
+export function getDb(binding, app, opts = {}) {
+    const mode = opts.mode;
+    const sqlByStatement = new WeakMap();
+    const realByStatement = new WeakMap();
+    return new Proxy(binding, {
+        get(target, prop, _receiver) {
+            if (prop === "prepare") {
+                return (query) => {
+                    guardWrite(query, app, { mode });
+                    const real = target.prepare(query);
+                    return wrapPreparedStatement(real, query, sqlByStatement, realByStatement);
+                };
+            }
+            if (prop === "batch") {
+                return (statements) => {
+                    const realStatements = statements.map((statement) => {
+                        const sql = sqlByStatement.get(statement);
+                        if (sql === undefined) {
+                            // Not created via this guarded prepare() — we cannot recover its SQL text to
+                            // classify it as a read or a write, so fail closed rather than let an
+                            // unchecked statement through batch(). Reported directly (not round-tripped
+                            // through guardWrite's regex parser, since there is no real SQL text here).
+                            enforceViolation({
+                                app,
+                                table: UNTRACKED_BATCH_STATEMENT_TABLE,
+                                statement: "<unavailable: statement not created via this guarded prepare()>",
+                            }, mode);
+                            return statement;
+                        }
+                        return realByStatement.get(statement) ?? statement;
+                    });
+                    return target.batch(realStatements);
+                };
+            }
+            if (prop === "exec") {
+                return (query) => {
+                    for (const statement of splitExecStatements(query)) {
+                        guardWrite(statement, app, { mode });
+                    }
+                    return target.exec(query);
+                };
+            }
+            return bindToTarget(target, Reflect.get(target, prop, target));
+        },
+    });
 }
