@@ -52,7 +52,13 @@ function sha256(content: string) {
 
 describe("check-ownership.mjs — consumer mode", () => {
   it("passes cleanly on a fixture consumer with no violations (R2'/R3/R4/R5 all satisfied, R4-exempt paths present)", () => {
-    const result = run(join(FIXTURES, "consumer-pass"));
+    // R7 is tested in isolation below with a dynamically-built, real-hash fixture — this
+    // fixture's migrations/0001_init.sql is fixture content, not byte-identical to the real
+    // migration, so it's deliberately decoupled from the real package-root migrations.lock.json
+    // (same override the "R7 SKIPPED" test below uses) to keep this test about R2'/R3/R4/R5 only.
+    const result = run(join(FIXTURES, "consumer-pass"), [], {
+      KODEKRAFT_SHARED_TEST_LOCK_PATH: join(tmpdir(), "does-not-exist-lock.json"),
+    });
     expect(result.stdout + result.stderr).toContain("no violations found");
     expect(result.status).toBe(0);
   });
