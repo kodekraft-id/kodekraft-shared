@@ -1,16 +1,59 @@
-// PLACEHOLDER MODULE — scaffolded by OPS-shared-01.
-//
-// The real implementation lands in BE-mono-10: doc 11 (`11-tier-capability-design.md`)
-// §1's tier capability map (`TIER_CAPABILITIES`, `getEffectivePhotoCap`, `hasFeature`,
-// `computeExpiresAt`) — pure values and predicates only. `assertFeature` is deliberately
-// NOT exported from this package (project-docs/12 §5.2): each consuming repo writes its
-// own 3-liner throwing its own `HttpError`, since the response envelope stays per-repo.
-//
-// This stub exists only so the package's exports map (`./tier`), build pipeline, and CI
-// have a real module to compile, bundle, and test end-to-end during v0.1 scaffolding.
+// Real implementation (BE-mono-10): doc 11 (`11-tier-capability-design.md`) §1's tier
+// capability map — the single source of truth for "tier X unlocks feature Y". Pure values
+// and predicates only, no D1 access. `assertFeature` is deliberately NOT exported from this
+// package (project-docs/12 §5.2): each consuming repo writes its own 3-liner over `hasFeature`,
+// throwing its own local `HttpError`, since the response envelope stays per-repo.
 
-/** Placeholder — replaced by the real `PackageTier` union when BE-mono-10 lands. */
-export type PackageTierStub = "basic" | "premium" | "exclusive";
+/** The 3 package tiers a client can buy. The one canonical type — DB schema's
+ * `invitations.package_tier` CHECK constraint should be kept manually in sync with this. */
+export type PackageTier = "basic" | "premium" | "exclusive";
 
-/** Placeholder export confirming the `./tier` module resolves. Replaced by BE-mono-10. */
-export const tierStub: readonly PackageTierStub[] = ["basic", "premium", "exclusive"];
+export interface TierCapabilities {
+  photoCap: number;
+  qrCheckin: boolean;
+  customDomain: boolean;
+  /** Months of active duration after publish; null = never expires ("forever"). */
+  durationMonths: number | null;
+}
+
+/** Frozen tier -> capability defaults. Changing what a tier unlocks is a pricing decision,
+ * same category as changing its price — edited by code review + redeploy, never at runtime. */
+export const TIER_CAPABILITIES: Readonly<Record<PackageTier, TierCapabilities>> = Object.freeze({
+  basic: { photoCap: 5, qrCheckin: false, customDomain: false, durationMonths: 3 },
+  premium: { photoCap: 15, qrCheckin: true, customDomain: false, durationMonths: 12 },
+  exclusive: { photoCap: 50, qrCheckin: true, customDomain: true, durationMonths: null },
+});
+
+// Personal guest links (`guests.token`, the `?to=` mechanism) are deliberately NOT modeled
+// in this map: every tier has them, unconditionally (confirmed 2026-09-17). Do not add a
+// `personalGuestLinks` flag here — its only effect would be inviting a future
+// `if (!hasFeature(...))` check that contradicts the confirmed decision. If personal links
+// ever need to become conditional, that's a new product decision requiring a new field here,
+// not a bug fix to "restore" one.
+//
+// Templates are tier-agnostic by product decision (2026-09-17): this map is keyed ONLY by
+// tier, never by template key. No `templates.min_tier` column exists or should be added.
+
+/**
+ * Effective photo cap for an invitation: the per-buyer staff override
+ * (`invitations.photo_cap_override`) if one is set, otherwise the tier default.
+ * `0` is a legitimate override value (a real zero-cap), not treated as "no override" —
+ * only `null`/`undefined` fall back to the tier default.
+ */
+export function getEffectivePhotoCap(tier: PackageTier, override?: number | null): number {
+  return override ?? TIER_CAPABILITIES[tier].photoCap;
+}
+
+/** Whether a tier includes a given binary feature (QR check-in / custom domain). */
+export function hasFeature(tier: PackageTier, feature: "qrCheckin" | "customDomain"): boolean {
+  return TIER_CAPABILITIES[tier][feature];
+}
+
+/** Computes `invitations.expires_at` at publish time. Pure — no D1 access. */
+export function computeExpiresAt(activatedAt: Date, tier: PackageTier): Date | null {
+  const months = TIER_CAPABILITIES[tier].durationMonths;
+  if (months === null) return null;
+  const d = new Date(activatedAt);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d;
+}
