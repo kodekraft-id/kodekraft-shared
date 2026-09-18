@@ -32,7 +32,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "classify-release": "node scripts/classify-release.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

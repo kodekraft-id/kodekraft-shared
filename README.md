@@ -46,22 +46,24 @@ and are **not** part of this package's surface, on purpose:
 
 ## Status (v0.1.0)
 
-Started as the `OPS-shared-01` scaffolding commit; most modules now have real
-implementations landed on top of it. `src/tier.ts` and `migrations.lock.json` are the
-remaining open pieces:
+Started as the `OPS-shared-01` scaffolding commit. As of `v0.1.0`, every module listed under
+"What this package is" above has a real implementation, with test coverage (68 tests as of
+`BE-mono-10`/`OPS-mono-14`/`fcb3ce0`, growing with `OPS-shared-20`'s classifier tests):
 
 | Module | Status |
 |---|---|
 | `src/ownership.ts` | **real (`BE-mono-12`, landed)** |
 | `src/client.ts` | **real (`BE-mono-13`, landed)** |
 | `src/guard.ts` | **real (`BE-mono-13`, landed)** |
-| `src/tier.ts` | typed stub — real implementation lands in `BE-mono-10` |
-| `bin/check-ownership.mjs` | **real (`OPS-mono-14`, landed)** — R2'/R3/R4/R4-exempt/R5/R7 enforced against a consumer; R1/R6 enforced against this package's own repo. R8 (v0.2, optional) and R7's actual enforcement (pending `migrations.lock.json` below) are open. |
+| `src/tier.ts` | **real (`BE-mono-10`, landed)** — `TIER_CAPABILITIES`, `getEffectivePhotoCap`, `hasFeature`, `computeExpiresAt` |
+| `bin/check-ownership.mjs` | **real (`OPS-mono-14`, landed)** — R2'/R3/R4/R4-exempt/R5/R7 enforced against a consumer; R1/R6 enforced against this package's own repo. R8 (v0.2, optional) is the only rule still open. |
 | `ownership.json` | **real (`BE-mono-12`, landed)** |
 | `OWNERSHIP.md` | **real, generated render (`OPS-mono-14`, landed)** — run `node bin/check-ownership.mjs --fix` to regenerate after any `ownership.json` change |
-| `migrations.lock.json` | still does not exist in this package — lands via `OPS-shared-05`. Until then, `check-ownership`'s R7 rule prints a `R7 SKIPPED` warning and does not fail consumer builds; it activates automatically once the file lands, no consumer change needed. |
+| `migrations.lock.json` | **real, landed** — R7 is fully enforced against consumers now, no more `R7 SKIPPED` warning. |
+| `scripts/classify-release.mjs` | **real (`OPS-shared-20`, landed)** — see `RELEASING.md` §4. |
 
 The package shell, exports map, build pipeline, and CI are real and passing end-to-end.
+`v0.1.0` is tagged on this state — see `RELEASING.md`.
 
 ## Consuming this package
 
@@ -78,8 +80,8 @@ reproducible even if a tag were force-moved. **Never pin a branch ref (`#main`).
 
 ```ts
 import { getDb } from "@kodekraft/shared/client";
-import { writersOf, writableColumns, tablesFor } from "@kodekraft/shared/ownership"; // real, BE-mono-12
-import { tierStub } from "@kodekraft/shared/tier";            // stub in v0.1.0
+import { writersOf, writableColumns, tablesFor } from "@kodekraft/shared/ownership";
+import { TIER_CAPABILITIES, getEffectivePhotoCap, hasFeature } from "@kodekraft/shared/tier";
 ```
 
 There is deliberately **no root `.` export** — every import must name exactly what it
@@ -93,12 +95,14 @@ install-time build step in the consumer, so whatever is in `dist/` at the pinned
 what ships. This repo's own CI fails the build if `dist/` is stale relative to `src/`
 (`pnpm build && git diff --exit-code -- dist`).
 
-## Versioning
+## Versioning and releasing
 
 `0.x`, where **minor** = any `ownership.json`/export-surface change, **patch** =
-implementation-only. See `project-docs/12-cross-repo-integration-design.md` §5.6 in the
-consuming repos for the full widening-vs-narrowing bump rules. No tag has been cut yet for
-this initial scaffold — that's `OPS-shared-20`, once real content exists.
+implementation-only. See `RELEASING.md` for the full bump-cycle process (PR → CI → merge →
+bump → tag → push), the widening-vs-narrowing adoption-obligation rules, the
+`migrations.lock.json` lockstep obligation, and `scripts/classify-release.mjs`, the tool
+that classifies a range of commits into those categories automatically. `v0.1.0` is the
+first tag, cut via `OPS-shared-20`.
 
 ## Development
 
