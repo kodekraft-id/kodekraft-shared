@@ -175,6 +175,10 @@ Full rules and worked examples are in `RELEASING.md` (doc 12 §5.6). In short:
 To bump a consumer: change the tag in its `package.json` (`#v0.1.x`), run `pnpm install` so
 `pnpm-lock.yaml` re-resolves it to a commit SHA, run `pnpm check:ownership`, commit both files.
 
+### Per-Worker secrets
+
+See `docs/SECRETS.md` for the secrets each Worker needs set before a deploy.
+
 ### The ownership matrix
 
 `OWNERSHIP.md` is a generated, human-readable render of `ownership.json` (the source of
