@@ -60,6 +60,7 @@ Started as the `OPS-shared-01` scaffolding commit. As of `v0.1.0`, every module 
 | `ownership.json` | **real (`BE-mono-12`, landed)** |
 | `OWNERSHIP.md` | **real, generated render (`OPS-mono-14`, landed)** — run `node bin/check-ownership.mjs --fix` to regenerate after any `ownership.json` change |
 | `migrations.lock.json` | **real, landed** — R7 is fully enforced against consumers now, no more `R7 SKIPPED` warning. |
+| `bin/sync-migrations.mjs` | **real (`OPS-shared-07`, landed)** � see "Adding a migration" below. |
 | `scripts/classify-release.mjs` | **real (`OPS-shared-20`, landed)** — see `RELEASING.md` §4. |
 
 The package shell, exports map, build pipeline, and CI are real and passing end-to-end.
@@ -71,7 +72,7 @@ This is a **git-protocol dependency**, never published to npm (`"private": true`
 `package.json` is deliberate — it blocks an accidental `npm publish`).
 
 ```bash
-pnpm add github:kodekraft-id/kodekraft-shared#v0.1.0
+pnpm add github:kodekraft-id/kodekraft-shared#v0.1.2
 ```
 
 This writes an immutable-by-lockfile pin: the tag is the human-readable pointer, and
@@ -86,6 +87,99 @@ import { TIER_CAPABILITIES, getEffectivePhotoCap, hasFeature } from "@kodekraft/
 
 There is deliberately **no root `.` export** — every import must name exactly what it
 pulls in.
+
+### The `kodekraft` block in the consumer's `package.json`
+
+`check-ownership` reads its configuration from a `kodekraft` block in the consuming repo's
+own `package.json` (rule R2' fails if it is missing or names an app not in `ownership.json`),
+and each repo exposes the CLI as a script:
+
+```json
+{
+  "scripts": { "check:ownership": "kodekraft-check-ownership" },
+  "dependencies": { "@kodekraft/shared": "github:kodekraft-id/kodekraft-shared#v0.1.2" },
+  "kodekraft": {
+    "app": "worker-user",
+    "dbCompositionRoot": "src/worker/db/client.ts",
+    "schemaMirror": "src/worker/db/schema.ts",
+    "migrationsDir": "migrations"
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `app` | This repo's identity; one of `ownership.json`'s `apps` (`worker-landing`, `worker-user`, `worker-admin`, `worker-undangan`). |
+| `dbCompositionRoot` | The one file allowed to touch the raw `env.DB` binding (it calls `getDb(env.DB, app)`). |
+| `schemaMirror` | The repo's hand-mirrored Drizzle schema; every `sqliteTable(...)` in it must be a table this app reads or writes. |
+| `migrationsDir` | The repo's migrations folder, hashed against `migrations.lock.json`. |
+
+### `check:ownership` rules
+
+Run `pnpm check:ownership` from a consuming repo's root (exit code 1 on any violation, each
+printed as `file:line � [Rule] message`). In this package's own repo, the same binary runs
+the package-integrity rules instead.
+
+| Rule | Where | Fails when |
+|---|---|---|
+| R1 | this repo | the exports map has a root `"."` export, or a subpath target is missing on disk |
+| R6 | this repo | `OWNERSHIP.md` is missing or not a fresh render of `ownership.json` |
+| R2' | consumer | no `kodekraft` block, or `kodekraft.app` is missing / not in `ownership.json` |
+| R3 | consumer | any import reaches around the exports map (`@kodekraft/shared/src`, `/dist`, or a relative path into `node_modules`) |
+| R4 | consumer | `env.DB`, or a binding-shaped receiver's `.prepare()/.batch()/.exec()`, appears outside `dbCompositionRoot`. Exempt: `bindings.ts`, `test/**`, `*.test.ts`/`*.spec.ts`. Comment text is ignored. Known limit: it cannot resolve receiver types, so a `.batch()` on an already-guarded Drizzle instance named like a db can still false-positive (`OPS-shared-21` part b, open). |
+| R5 | consumer | `schemaMirror` defines a table the app neither reads nor writes per `ownership.json` |
+| R7 | consumer | a file in `migrationsDir` differs from, is missing from, or is absent in `migrations.lock.json` (sha256 of the file bytes; note that on Windows with `core.autocrlf` a CRLF working copy hashes differently from the LF that CI checks out) |
+
+### The runtime guard: `getDb(binding, app, { mode })`
+
+`getDb` wraps the raw D1 binding in a Proxy that checks every write (`INSERT`/`UPDATE`/
+`DELETE`, including `ON CONFLICT DO UPDATE` columns, and each statement in a `batch()` or
+`exec()`) against `ownership.json` before it runs. Reads pass through untouched. A write it
+cannot parse (e.g. `REPLACE INTO`, DDL, an unrecognized shape) **fails closed** as a violation.
+
+| Mode | On violation |
+|---|---|
+| `"throw"` (default) | throws `OwnershipViolationError`; the statement never reaches D1 |
+| `"warn"` | logs a structured record via `console.error` and lets the statement proceed. Intended for rolling the guard out to a repo before enforcing it. |
+
+### Adding a migration (`sync-migrations`)
+
+Migrations are byte-identical across all 4 app repos and locked in `migrations.lock.json`
+(a lockstep DDL obligation, see `RELEASING.md`). Instead of copying by hand:
+
+```bash
+node bin/sync-migrations.mjs ../invitation-worker-landing/migrations/0014_something.sql --dry-run
+node bin/sync-migrations.mjs ../invitation-worker-landing/migrations/0014_something.sql
+```
+
+It expects the 4 app repos as siblings of this package (override with `--root <dir>`),
+copies the file into each `migrations/` folder, and rewrites `migrations.lock.json` (sorted,
+CRLF-normalized hashes). It refuses (before writing anything) a bad name, a number not above
+the locked maximum, an edit to an already-locked migration, a conflicting file already in a
+repo, or repos that have diverged. It never commits, bumps, or tags; do that per `RELEASING.md`.
+
+### Bumping a consumer's pin: widening vs. narrowing
+
+Full rules and worked examples are in `RELEASING.md` (doc 12 �5.6). In short:
+
+- **Widening** (new write grant, new column, new table, new export): only the app that needs
+  the new capability bumps its pin; the other repos may stay on the old tag.
+- **Narrowing** (a revoked write or tightened column list, or a stricter rule that newly
+  fails existing code): the narrowed app must bump **and deploy first**; until it has
+  deployed, the change is on paper only.
+- **`migrations.lock.json` change**: the new file must exist in all 4 repos' `migrations/`
+  before any of them bumps past that version (otherwise R7 fails their CI).
+- Semver: `0.x`; **minor** = `ownership.json` / export-surface change, **patch** =
+  implementation-only. `node scripts/classify-release.mjs` classifies a commit range for you.
+
+To bump a consumer: change the tag in its `package.json` (`#v0.1.x`), run `pnpm install` so
+`pnpm-lock.yaml` re-resolves it to a commit SHA, run `pnpm check:ownership`, commit both files.
+
+### The ownership matrix
+
+`OWNERSHIP.md` is a generated, human-readable render of `ownership.json` (the source of
+truth). After any `ownership.json` change, regenerate it with
+`node bin/check-ownership.mjs --fix`; CI fails (R6) if it is stale.
 
 ### Committed `dist/`
 
