@@ -27,7 +27,8 @@
     }
   },
   "bin": {
-    "kodekraft-check-ownership": "./bin/check-ownership.mjs"
+    "kodekraft-check-ownership": "./bin/check-ownership.mjs",
+    "kodekraft-sync-migrations": "./bin/sync-migrations.mjs"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
