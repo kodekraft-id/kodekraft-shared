@@ -200,3 +200,46 @@ describe("QA-mono-15(c): check-ownership.mjs tamper and exemption detection", ()
     expect(leaked.output).not.toContain("gate-ordering.test.ts");
   });
 });
+
+describe("BE-mono-22: worker-admin provisioning writes", () => {
+  const admin = () => {
+    const { db, prepared } = fakeBinding();
+    return { guarded: getDb(db, "worker-admin"), prepared };
+  };
+
+  it("allows the clients INSERT of POST /api/clients", () => {
+    const { guarded } = admin();
+    expect(() =>
+      guarded.prepare(`insert into "clients" ("id", "name", "email", "phone", "password_hash", "created_at") values (?, ?, ?, ?, ?, ?)`),
+    ).not.toThrow();
+  });
+
+  it("allows the invitations INSERT of POST /api/invitations", () => {
+    const { guarded } = admin();
+    expect(() =>
+      guarded.prepare(
+        `insert into "invitations" ("id", "client_id", "template_id", "slug", "event_type", "title", "status", "created_at", "updated_at") values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ),
+    ).not.toThrow();
+  });
+
+  it("allows the sections seed INSERT and the addons settings UPDATE", () => {
+    const { guarded } = admin();
+    expect(() => guarded.prepare(`insert into "sections" ("id", "invitation_id", "type", "sort_order") values (?, ?, ?, ?)`)).not.toThrow();
+    expect(() => guarded.prepare(`update "invitations" set "settings" = ?, "updated_at" = ? where "id" = ?`)).not.toThrow();
+  });
+
+  it("still rejects clients.token_version / activation_token_hash and invitation content columns", () => {
+    const { guarded, prepared } = admin();
+    expect(() => guarded.prepare(`update "clients" set "token_version" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+    expect(() => guarded.prepare(`update "clients" set "activation_token_hash" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+    expect(() => guarded.prepare(`update "invitations" set "story" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+    expect(prepared).toEqual([]);
+  });
+
+  it("still rejects writes to other apps' tables", () => {
+    const { guarded } = admin();
+    expect(() => guarded.prepare(`update "orders" set "status" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+    expect(() => guarded.prepare(`insert into "guests" ("id") values (?)`)).toThrow(OwnershipViolationError);
+  });
+});

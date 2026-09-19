@@ -12,19 +12,19 @@ consuming repo for how this matrix is enforced against real code.
 |---|---|---|---|
 | `admins` | `schema/admins.ts` | worker-admin | — |
 | `app_settings` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
-| `clients` | `schema/clients.ts` | worker-landing (id, name, email, phone, password_hash, token_version, created_at, activation_token_hash, activation_expires_at, activation_issued_at, activation_resend_count, updated_at); worker-user (password_hash, token_version, name, email, phone, updated_at); worker-admin (deleted_at, updated_at) | — |
+| `clients` | `schema/clients.ts` | worker-landing (id, name, email, phone, password_hash, token_version, created_at, activation_token_hash, activation_expires_at, activation_issued_at, activation_resend_count, updated_at); worker-user (password_hash, token_version, name, email, phone, updated_at); worker-admin (id, name, email, phone, password_hash, created_at, deleted_at, updated_at) | — |
 | `events` | `schema/content.ts` | worker-user | worker-undangan |
 | `gift_accounts` | `schema/content.ts` | worker-user | worker-undangan |
 | `gifts` | `schema/submissions.ts` | worker-undangan; worker-user | worker-admin |
 | `guests` | `schema/guests.ts` | worker-user (id, invitation_id, name, token, group_name, phone, created_at, checked_in_at, checked_in_by, checkin_method, updated_at); worker-undangan (opened_at, opened_count) | worker-landing |
 | `invitation_domains` | `schema/domains.ts` | worker-user; worker-admin | worker-undangan |
-| `invitations` | `schema/invitations.ts` | worker-landing (id, client_id, template_id, slug, status, event_type, title, opening, story, quote, music_r2_key, music_title, settings, wa_template, package_tier, created_at, updated_at); worker-user (title, opening, story, quote, music_r2_key, music_title, settings, wa_template, event_type, status, activated_at, expires_at, updated_at); worker-admin (status, package_tier, photo_cap_override, deleted_at, updated_at) | worker-undangan, worker-landing |
+| `invitations` | `schema/invitations.ts` | worker-landing (id, client_id, template_id, slug, status, event_type, title, opening, story, quote, music_r2_key, music_title, settings, wa_template, package_tier, created_at, updated_at); worker-user (title, opening, story, quote, music_r2_key, music_title, settings, wa_template, event_type, status, activated_at, expires_at, updated_at); worker-admin (id, client_id, template_id, slug, event_type, title, settings, status, package_tier, photo_cap_override, created_at, deleted_at, updated_at) | worker-undangan, worker-landing |
 | `order_status_log` | `schema/orders.ts` | worker-landing | worker-admin |
 | `orders` | `schema/orders.ts` | worker-landing | worker-admin |
 | `persons` | `schema/content.ts` | worker-user | worker-undangan |
 | `photos` | `schema/content.ts` | worker-user | worker-undangan, worker-admin |
 | `rsvp` | `schema/submissions.ts` | worker-undangan; worker-user | worker-admin |
-| `sections` | `schema/sections.ts` | worker-landing; worker-user | worker-undangan |
+| `sections` | `schema/sections.ts` | worker-landing; worker-user; worker-admin | worker-undangan |
 | `story_items` | `schema/content.ts` | worker-user | worker-undangan |
 | `templates` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
 | `testimonials` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
