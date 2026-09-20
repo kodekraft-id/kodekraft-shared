@@ -198,6 +198,18 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.4.0`** (minor, pending tag) — tier x add-on model (BE-mono-23/24/25/26). `tier.ts` gains the
+  effective-capability API (`parsePurchasedAddons`, `getEffectiveCapabilities`, `maxUsefulGalleryUnits`,
+  `PHOTO_CEILING`, optional trailing `addons` param on `hasFeature`/`getEffectivePhotoCap`). **VALUE CHANGE
+  (called out per doc 17 FR-1):** `TIER_CAPABILITIES.*.qrCheckin`/`customDomain` are now `false` at every tier
+  (add-ons only; Premium/Exclusive previously `true`), `premium.durationMonths` 12 -> 6, `exclusive.durationMonths`
+  null -> 12. Why minor and not major: §3 defines this package's minor as any `ownership.json`/export-surface change
+  and the package is on `0.x` (no stability guarantee yet); no consumer has shipped gating on the changed values
+  (BE-user-07/13/15 unbuilt) so nothing regresses, and consumers only see the new values when they choose to bump.
+  `ownership.json` widenings, all pure widening (classify-release: 4 widening / 0 narrowing / 0 lockstep):
+  `invitations.purchased_addons` (landing + admin write), `invitation_domains` (landing gets a column-scoped
+  creation grant), new table `order_refunds` (admin write, landing read). No `migrations.lock.json` change: the
+  migrations that create these columns/tables (BE-wl-27, BE-wl-34) will lock separately.
 - **`v0.1.1`** (patch) — `bin/check-ownership.mjs`'s R4 rule false-positive fix. The bare
   `.(?:prepare|batch|exec)\s*\(` method-name match fired on any receiver, not just a D1
   binding — found during `BE-undangan-07` (the first real consumer integration), where it

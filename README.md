@@ -55,12 +55,12 @@ Started as the `OPS-shared-01` scaffolding commit. As of `v0.1.0`, every module 
 | `src/ownership.ts` | **real (`BE-mono-12`, landed)** |
 | `src/client.ts` | **real (`BE-mono-13`, landed)** |
 | `src/guard.ts` | **real (`BE-mono-13`, landed)** |
-| `src/tier.ts` | **real (`BE-mono-10`, landed)** — `TIER_CAPABILITIES`, `getEffectivePhotoCap`, `hasFeature`, `computeExpiresAt` |
+| `src/tier.ts` | **real (`BE-mono-10`, `BE-mono-23`, landed)** — `TIER_CAPABILITIES` (QR check-in and custom domain are `false` at every tier: add-ons only; durations basic 3 / premium 6 / exclusive 12 months), `parsePurchasedAddons`, `getEffectiveCapabilities`, `getEffectivePhotoCap(tier, override?, addons?)` (= `override ?? min(tierCap + 15 x gallery, PHOTO_CEILING=50)`), `hasFeature(tier, feature, addons?)`, `maxUsefulGalleryUnits`, `computeExpiresAt`, constants `GALLERY_ADDON_PHOTOS`/`PHOTO_CEILING`/`MAX_ADDON_QUANTITY` |
 | `bin/check-ownership.mjs` | **real (`OPS-mono-14`, landed)** — R2'/R3/R4/R4-exempt/R5/R7 enforced against a consumer; R1/R6 enforced against this package's own repo. R8 (v0.2, optional) is the only rule still open. |
 | `ownership.json` | **real (`BE-mono-12`, landed)** |
 | `OWNERSHIP.md` | **real, generated render (`OPS-mono-14`, landed)** — run `node bin/check-ownership.mjs --fix` to regenerate after any `ownership.json` change |
 | `migrations.lock.json` | **real, landed** — R7 is fully enforced against consumers now, no more `R7 SKIPPED` warning. |
-| `bin/sync-migrations.mjs` | **real (`OPS-shared-07`, landed)** � see "Adding a migration" below. |
+| `bin/sync-migrations.mjs` | **real (`OPS-shared-07`, landed)** � see "Adding a migration" below. |
 | `scripts/classify-release.mjs` | **real (`OPS-shared-20`, landed)** — see `RELEASING.md` §4. |
 
 The package shell, exports map, build pipeline, and CI are real and passing end-to-end.
@@ -82,7 +82,10 @@ reproducible even if a tag were force-moved. **Never pin a branch ref (`#main`).
 ```ts
 import { getDb } from "@kodekraft/shared/client";
 import { writersOf, writableColumns, tablesFor } from "@kodekraft/shared/ownership";
-import { TIER_CAPABILITIES, getEffectivePhotoCap, hasFeature } from "@kodekraft/shared/tier";
+import { TIER_CAPABILITIES, getEffectiveCapabilities, parsePurchasedAddons } from "@kodekraft/shared/tier";
+
+// Effective entitlements = tier defaults + purchased add-ons (invitations.purchased_addons) + staff override
+const caps = getEffectiveCapabilities(tier, parsePurchasedAddons(row.purchased_addons), row.photo_cap_override);
 ```
 
 There is deliberately **no root `.` export** — every import must name exactly what it
@@ -117,7 +120,7 @@ and each repo exposes the CLI as a script:
 ### `check:ownership` rules
 
 Run `pnpm check:ownership` from a consuming repo's root (exit code 1 on any violation, each
-printed as `file:line � [Rule] message`). In this package's own repo, the same binary runs
+printed as `file:line � [Rule] message`). In this package's own repo, the same binary runs
 the package-integrity rules instead.
 
 | Rule | Where | Fails when |
@@ -160,7 +163,7 @@ repo, or repos that have diverged. It never commits, bumps, or tags; do that per
 
 ### Bumping a consumer's pin: widening vs. narrowing
 
-Full rules and worked examples are in `RELEASING.md` (doc 12 �5.6). In short:
+Full rules and worked examples are in `RELEASING.md` (doc 12 �5.6). In short:
 
 - **Widening** (new write grant, new column, new table, new export): only the app that needs
   the new capability bumps its pin; the other repos may stay on the old tag.
