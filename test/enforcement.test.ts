@@ -243,3 +243,53 @@ describe("BE-mono-22: worker-admin provisioning writes", () => {
     expect(() => guarded.prepare(`insert into "guests" ("id") values (?)`)).toThrow(OwnershipViolationError);
   });
 });
+
+describe("BE-mono-24: invitations.purchased_addons ownership", () => {
+  const as = (app: "worker-landing" | "worker-user" | "worker-admin" | "worker-undangan") => {
+    const { db, prepared } = fakeBinding();
+    return { guarded: getDb(db, app), prepared };
+  };
+  const setAddons = `update "invitations" set "purchased_addons" = ?, "updated_at" = ? where "id" = ?`;
+
+  it("allows worker-landing to insert an invitation with purchased_addons (provisioning)", () => {
+    const { guarded } = as("worker-landing");
+    expect(() =>
+      guarded.prepare(`insert into "invitations" ("id", "client_id", "package_tier", "purchased_addons") values (?, ?, ?, ?)`),
+    ).not.toThrow();
+  });
+
+  it("allows worker-admin to update purchased_addons (PATCH /invitations/:id/addons)", () => {
+    const { guarded } = as("worker-admin");
+    expect(() => guarded.prepare(setAddons)).not.toThrow();
+  });
+
+  it("rejects worker-user writing purchased_addons (read-only for it), failing closed before the binding", () => {
+    const { guarded, prepared } = as("worker-user");
+    expect(() => guarded.prepare(setAddons)).toThrow(OwnershipViolationError);
+    expect(() =>
+      guarded.prepare(`insert into "invitations" ("id", "purchased_addons") values (?, ?)`),
+    ).toThrow(OwnershipViolationError);
+    expect(prepared).toEqual([]);
+  });
+
+  it("rejects worker-undangan writing purchased_addons", () => {
+    const { guarded, prepared } = as("worker-undangan");
+    expect(() => guarded.prepare(setAddons)).toThrow(OwnershipViolationError);
+    expect(prepared).toEqual([]);
+  });
+
+  it("does not widen anything else: admin still cannot write content columns alongside purchased_addons", () => {
+    const { guarded } = as("worker-admin");
+    expect(() =>
+      guarded.prepare(`update "invitations" set "purchased_addons" = ?, "story" = ? where "id" = ?`),
+    ).toThrow(OwnershipViolationError);
+  });
+
+  it("matrix: exactly landing and admin gained the column; user does not have it", async () => {
+    const { writableColumns } = await import("../src/ownership.js");
+    expect(writableColumns("invitations", "worker-landing")).toContain("purchased_addons");
+    expect(writableColumns("invitations", "worker-admin")).toContain("purchased_addons");
+    expect(writableColumns("invitations", "worker-user")).not.toContain("purchased_addons");
+    expect(writableColumns("invitations", "worker-undangan")).toEqual([]);
+  });
+});
