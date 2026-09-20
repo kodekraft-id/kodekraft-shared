@@ -198,6 +198,19 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.8.0`** (minor, pending tag) - `tier.ts` gains event-based expiry + a check-in pre-window, a direct product-rule change
+  from Pram (2026-09-20), additive on top of `v0.7.0`'s expiry section: `computeExpiresAtFromEvents(events, tier, opts?)` (basis =
+  the LATEST effective end across `events`, where one event's effective end is `end_at` when present else 23:59:59.999 WIB on
+  `start_at`'s WIB calendar day; falls back to `opts.activatedAt` when no event is usable, `null` when neither is; reuses
+  `computeExpiresAt`'s exact month arithmetic via a new internal `addTierPeriodMonths` helper so the two can never diverge;
+  `is_demo` is NOT handled here, matching `computeExpiresAt`'s own convention), `isCheckinWindowOpen(events, opts?)` and
+  `CHECKIN_PRE_BUFFER_MINUTES` (60) for a QR check-in scanner's pre-event window (`now` in `[start_at - bufferMinutes, effective
+  end]` of any event, inclusive; `testMode: true` always open; an invalid `bufferMinutes` falls back to the 60-minute default),
+  and the new `EventWindow`/`ComputeExpiresAtFromEventsOptions`/`CheckinWindowOptions` exported types. Pure widening (new exports
+  on the existing `./tier` entry); no `ownership.json` or `migrations.lock.json` change. One product-rule ambiguity was flagged
+  back to Pram rather than guessed: an event with an `end_at` but no `start_at` never opens the check-in window (conservative
+  choice — there is no principled way to place the pre-buffer without a start time); see this function's own doc comment in
+  `src/tier.ts` and the implementing session's handoff report.
 - **`v0.7.0`** (minor, pending tag) - `tier.ts` gains the expiry helpers (BE-mono-28, doc 17 section 16): `isInvitationExpired`,
   `isInvitationLocked`, `getInvitationExpiryState`, `isDomainActive`, `parseTimestampMs`, `EXPIRY_GRACE_DAYS` (30). Demos (`is_demo === 1`)
   never expire; NULL `expires_at` = not expired; accepts UTC `Z`, `+07:00` offsets and zone-less SQLite datetimes (read as UTC). Pure

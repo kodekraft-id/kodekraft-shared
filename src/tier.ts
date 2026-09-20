@@ -156,14 +156,23 @@ export function getEffectiveCapabilities(
   };
 }
 
+/** Adds `months` to `base` using native UTC month arithmetic, preserving time-of-day. Overflow is
+ * native `Date` behavior (e.g. Jan 31 + 1 month -> Mar 3), documented not fought (see
+ * `computeExpiresAt`'s own tests for the edge-case matrix). Extracted so every tier-period
+ * calculation in this module shares one implementation and can never drift apart. */
+function addTierPeriodMonths(base: Date, months: number): Date {
+  const result = new Date(base);
+  result.setUTCMonth(result.getUTCMonth() + months);
+  return result;
+}
+
 /** Computes `invitations.expires_at` at publish time. Pure — no D1 access. The `null` branch is
- * legacy/defensive only (no tier has a null duration any more). */
+ * legacy/defensive only (no tier has a null duration any more). Shares its month arithmetic with
+ * {@link computeExpiresAtFromEvents} via the internal `addTierPeriodMonths` helper. */
 export function computeExpiresAt(activatedAt: Date, tier: PackageTier): Date | null {
   const months = TIER_CAPABILITIES[tier].durationMonths;
   if (months === null) return null;
-  const d = new Date(activatedAt);
-  d.setUTCMonth(d.getUTCMonth() + months);
-  return d;
+  return addTierPeriodMonths(activatedAt, months);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -279,4 +288,169 @@ export function isDomainActive(
   const domainExpiresMs = parseTimestampMs(domain.expires_at);
   if (domainExpiresMs !== null && domainExpiresMs <= now.getTime()) return false;
   return !isInvitationExpired(invitation, now);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Event-based expiry + check-in pre-window. Direct product-rule change from Pram (2026-09-20),
+// shipped additively (v0.8.0): (A) an invitation's tier period now counts from the LATEST event
+// end, not first publish (`computeExpiresAt`/`activatedAt`-only stays exactly as-is, as the
+// fallback path); (B) a QR check-in scanner may open up to CHECKIN_PRE_BUFFER_MINUTES before an
+// event starts. Pure functions, injectable `now`, no D1 access — same conventions as the expiry/
+// grace section above.
+// ---------------------------------------------------------------------------------------------
+
+/** Minimal `events` row shape the schedule-based helpers below need: both fields optional/
+ * nullable so a raw D1 row, a partial select, or a legacy row all work. Field names match the D1
+ * columns (snake_case) directly — no mapping layer required. */
+export interface EventWindow {
+  start_at?: string | Date | null;
+  end_at?: string | Date | null;
+}
+
+/** Indonesia Western time (WIB, UTC+7) — used ONLY for the "no `end_at`" fallback below. Not a
+ * general timezone-conversion utility: every other timestamp in this module is UTC. */
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+const MS_PER_MINUTE = 60 * 1000;
+
+/**
+ * 23:59:59.999 WIB on the WIB calendar day containing `instantMs`, returned as a UTC epoch ms.
+ * The day is derived from the WIB-shifted instant, not from the raw stored digits, so this stays
+ * self-consistent even when `start_at` carries a non-WIB offset (or `Z`): the result is always
+ * `>= instantMs`.
+ */
+function endOfWibDayMs(instantMs: number): number {
+  const wibWallClock = new Date(instantMs + WIB_OFFSET_MS);
+  const endOfWibDayAsUtcDigits = Date.UTC(
+    wibWallClock.getUTCFullYear(),
+    wibWallClock.getUTCMonth(),
+    wibWallClock.getUTCDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+  return endOfWibDayAsUtcDigits - WIB_OFFSET_MS;
+}
+
+/**
+ * One event's "effective end" — shared by {@link computeExpiresAtFromEvents} and
+ * {@link isCheckinWindowOpen} so the rule can never diverge between the two: `end_at` when it
+ * parses, else 23:59:59.999 WIB on `start_at`'s WIB calendar day. `null` when neither date is
+ * usable. Parses with {@link parseTimestampMs}, so `Z`/`+07:00`/zone-less/`Date` all work exactly
+ * as everywhere else in this module.
+ */
+function effectiveEventEndMs(event: EventWindow | null | undefined): number | null {
+  if (!event) return null;
+  const endMs = parseTimestampMs(event.end_at);
+  if (endMs !== null) return endMs;
+  const startMs = parseTimestampMs(event.start_at);
+  return startMs !== null ? endOfWibDayMs(startMs) : null;
+}
+
+/** The latest effective end across `events` (see {@link effectiveEventEndMs}), or `null` when no
+ * event has a usable date. */
+function latestEffectiveEventEndMs(events: readonly EventWindow[] | null | undefined): number | null {
+  if (!events) return null;
+  let latestMs: number | null = null;
+  for (const event of events) {
+    const endMs = effectiveEventEndMs(event);
+    if (endMs !== null && (latestMs === null || endMs > latestMs)) latestMs = endMs;
+  }
+  return latestMs;
+}
+
+/** Options for {@link computeExpiresAtFromEvents}. */
+export interface ComputeExpiresAtFromEventsOptions {
+  /** Fallback basis when no event in `events` has a usable date. Parsed with
+   * {@link parseTimestampMs} (accepts the same shapes as everywhere else in this module). */
+  activatedAt?: string | Date | null;
+  /** Accepted for signature symmetry with this module's other injectable-`now` helpers. NOT used
+   * today: the result is fully determined by `events`/`activatedAt`, never by wall-clock time. */
+  now?: Date;
+}
+
+/**
+ * Computes `invitations.expires_at` from an invitation's own events (product-rule change,
+ * 2026-09-20): basis = the LATEST effective end across `events` (see {@link effectiveEventEndMs})
+ * + the tier's period in months, reusing the exact month arithmetic {@link computeExpiresAt} uses
+ * (via the shared internal `addTierPeriodMonths`) so month-end behavior never diverges between
+ * the two. Falls back to `opts.activatedAt` + the tier period when no event has a usable date;
+ * returns `null` when `activatedAt` is missing/unusable too (caller decides, e.g. leave the
+ * invitation without an `expires_at` until it has either). The `null`-duration branch is legacy/
+ * defensive only, same as {@link computeExpiresAt}. Demos (`is_demo === 1`) are NOT handled here —
+ * matching `computeExpiresAt`'s existing convention of leaving that to callers.
+ */
+export function computeExpiresAtFromEvents(
+  events: readonly EventWindow[] | null | undefined,
+  tier: PackageTier,
+  opts: ComputeExpiresAtFromEventsOptions = {},
+): string | null {
+  const months = TIER_CAPABILITIES[tier].durationMonths;
+  if (months === null) return null;
+
+  const basisMs = latestEffectiveEventEndMs(events) ?? parseTimestampMs(opts.activatedAt);
+  if (basisMs === null) return null;
+
+  return addTierPeriodMonths(new Date(basisMs), months).toISOString();
+}
+
+/** Minutes before an event's `start_at` a QR check-in scanner may open (product rule,
+ * 2026-09-20). One constant, not per-caller. */
+export const CHECKIN_PRE_BUFFER_MINUTES = 60;
+
+/** Falls back to {@link CHECKIN_PRE_BUFFER_MINUTES} for a negative, `NaN`/non-finite, or
+ * `undefined` value. `0` is a valid, deliberate "no pre-buffer, open exactly at start_at". */
+function normalizeBufferMinutes(bufferMinutes: number | undefined): number {
+  if (typeof bufferMinutes !== "number" || !Number.isFinite(bufferMinutes) || bufferMinutes < 0) {
+    return CHECKIN_PRE_BUFFER_MINUTES;
+  }
+  return bufferMinutes;
+}
+
+/**
+ * One event's check-in window: `[start_at - bufferMs, effective end]`, boundaries inclusive.
+ * Conservative choice, flagged for Pram (not guessed): an event with NO `start_at` never opens a
+ * window, even when it has a usable `end_at` — there is no principled way to place the pre-buffer
+ * without a start time. This differs from {@link computeExpiresAtFromEvents}, where a bare
+ * `end_at` IS usable, because that path needs no start bound.
+ */
+function isEventCheckinWindowOpen(event: EventWindow | null | undefined, nowMs: number, bufferMs: number): boolean {
+  if (!event) return false;
+  const startMs = parseTimestampMs(event.start_at);
+  if (startMs === null) return false;
+  const endMs = effectiveEventEndMs(event);
+  if (endMs === null) return false; // unreachable: a parsed start_at always yields a fallback end
+  return nowMs >= startMs - bufferMs && nowMs <= endMs;
+}
+
+/** Options for {@link isCheckinWindowOpen}. */
+export interface CheckinWindowOptions {
+  /** Defaults to `new Date()`. */
+  now?: Date;
+  /** Minutes before `start_at` the window opens. Defaults to, and falls back on an invalid value
+   * to, {@link CHECKIN_PRE_BUFFER_MINUTES}. */
+  bufferMinutes?: number;
+  /** `true` always opens the window (staff testing a scanner ahead of the event). Short-circuits
+   * every other check, including "no usable events". */
+  testMode?: boolean;
+}
+
+/**
+ * Whether a QR check-in scanner may accept scans right now: `now` falls within
+ * `[start_at - bufferMinutes, effective end]` of ANY event in `events` (same effective-end rule as
+ * {@link computeExpiresAtFromEvents}), boundaries inclusive. `testMode: true` always returns
+ * `true` (the customer testing a scanner before the event). No usable event — missing/empty
+ * `events`, or every event missing `start_at` — closes the window unless `testMode`.
+ */
+export function isCheckinWindowOpen(
+  events: readonly EventWindow[] | null | undefined,
+  opts: CheckinWindowOptions = {},
+): boolean {
+  if (opts.testMode) return true;
+  if (!events || events.length === 0) return false;
+
+  const nowMs = (opts.now ?? new Date()).getTime();
+  const bufferMs = normalizeBufferMinutes(opts.bufferMinutes) * MS_PER_MINUTE;
+  return events.some((event) => isEventCheckinWindowOpen(event, nowMs, bufferMs));
 }

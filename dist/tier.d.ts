@@ -51,7 +51,8 @@ export declare function hasFeature(tier: PackageTier, feature: "qrCheckin" | "cu
 /** Everything an invitation is actually entitled to: tier defaults + purchased add-ons + staff override. */
 export declare function getEffectiveCapabilities(tier: PackageTier, addons?: PurchasedAddons | null, photoCapOverride?: number | null): TierCapabilities;
 /** Computes `invitations.expires_at` at publish time. Pure — no D1 access. The `null` branch is
- * legacy/defensive only (no tier has a null duration any more). */
+ * legacy/defensive only (no tier has a null duration any more). Shares its month arithmetic with
+ * {@link computeExpiresAtFromEvents} via the internal `addTierPeriodMonths` helper. */
 export declare function computeExpiresAt(activatedAt: Date, tier: PackageTier): Date | null;
 /** Dashboard read-only grace after `expires_at` (OQ-20: "~30 days"). One constant, not per-caller. */
 export declare const EXPIRY_GRACE_DAYS = 30;
@@ -97,3 +98,53 @@ export declare function getInvitationExpiryState(row: ExpirableInvitation | null
  * active period (demos exempt, via {@link isInvitationExpired}). A null/missing domain is inactive.
  */
 export declare function isDomainActive(domain: DomainLifecycle | null | undefined, invitation: ExpirableInvitation | null | undefined, now?: Date): boolean;
+/** Minimal `events` row shape the schedule-based helpers below need: both fields optional/
+ * nullable so a raw D1 row, a partial select, or a legacy row all work. Field names match the D1
+ * columns (snake_case) directly — no mapping layer required. */
+export interface EventWindow {
+    start_at?: string | Date | null;
+    end_at?: string | Date | null;
+}
+/** Options for {@link computeExpiresAtFromEvents}. */
+export interface ComputeExpiresAtFromEventsOptions {
+    /** Fallback basis when no event in `events` has a usable date. Parsed with
+     * {@link parseTimestampMs} (accepts the same shapes as everywhere else in this module). */
+    activatedAt?: string | Date | null;
+    /** Accepted for signature symmetry with this module's other injectable-`now` helpers. NOT used
+     * today: the result is fully determined by `events`/`activatedAt`, never by wall-clock time. */
+    now?: Date;
+}
+/**
+ * Computes `invitations.expires_at` from an invitation's own events (product-rule change,
+ * 2026-09-20): basis = the LATEST effective end across `events` (see {@link effectiveEventEndMs})
+ * + the tier's period in months, reusing the exact month arithmetic {@link computeExpiresAt} uses
+ * (via the shared internal `addTierPeriodMonths`) so month-end behavior never diverges between
+ * the two. Falls back to `opts.activatedAt` + the tier period when no event has a usable date;
+ * returns `null` when `activatedAt` is missing/unusable too (caller decides, e.g. leave the
+ * invitation without an `expires_at` until it has either). The `null`-duration branch is legacy/
+ * defensive only, same as {@link computeExpiresAt}. Demos (`is_demo === 1`) are NOT handled here —
+ * matching `computeExpiresAt`'s existing convention of leaving that to callers.
+ */
+export declare function computeExpiresAtFromEvents(events: readonly EventWindow[] | null | undefined, tier: PackageTier, opts?: ComputeExpiresAtFromEventsOptions): string | null;
+/** Minutes before an event's `start_at` a QR check-in scanner may open (product rule,
+ * 2026-09-20). One constant, not per-caller. */
+export declare const CHECKIN_PRE_BUFFER_MINUTES = 60;
+/** Options for {@link isCheckinWindowOpen}. */
+export interface CheckinWindowOptions {
+    /** Defaults to `new Date()`. */
+    now?: Date;
+    /** Minutes before `start_at` the window opens. Defaults to, and falls back on an invalid value
+     * to, {@link CHECKIN_PRE_BUFFER_MINUTES}. */
+    bufferMinutes?: number;
+    /** `true` always opens the window (staff testing a scanner ahead of the event). Short-circuits
+     * every other check, including "no usable events". */
+    testMode?: boolean;
+}
+/**
+ * Whether a QR check-in scanner may accept scans right now: `now` falls within
+ * `[start_at - bufferMinutes, effective end]` of ANY event in `events` (same effective-end rule as
+ * {@link computeExpiresAtFromEvents}), boundaries inclusive. `testMode: true` always returns
+ * `true` (the customer testing a scanner before the event). No usable event — missing/empty
+ * `events`, or every event missing `start_at` — closes the window unless `testMode`.
+ */
+export declare function isCheckinWindowOpen(events: readonly EventWindow[] | null | undefined, opts?: CheckinWindowOptions): boolean;
