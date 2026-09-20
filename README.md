@@ -5,7 +5,9 @@ independent app repos (`invitation-worker-landing`, `invitation-worker-user`,
 `invitation-worker-admin`, `invitation-worker-undangan`).
 
 Full design and rationale: `project-docs/12-cross-repo-integration-design.md` §5 in each
-consuming repo (this package's own docs land later, via `DOC-shared-01`).
+consuming repo. This file plus `RELEASING.md` (release process for *this* package) and
+`docs/DEPLOYMENT.md` (rollout procedure for the 4 apps that consume it) are this package's
+own docs (`DOC-shared-01`/`DOC-shared-02`).
 
 ## What this package is
 
@@ -44,11 +46,12 @@ and are **not** part of this package's surface, on purpose:
   schema would put `admins`/`orders`/`clients` back within import reach of the public,
   unauthenticated worker-undangan Worker).
 
-## Status (v0.1.0)
+## Status (v0.9.1, tag pending push)
 
-Started as the `OPS-shared-01` scaffolding commit. As of `v0.1.0`, every module listed under
-"What this package is" above has a real implementation, with test coverage (68 tests as of
-`BE-mono-10`/`OPS-mono-14`/`fcb3ce0`, growing with `OPS-shared-20`'s classifier tests):
+Started as the `OPS-shared-01` scaffolding commit. Every module listed under "What this
+package is" above has a real implementation, with 417 tests as of `package.json`'s current
+`0.9.1` (see `RELEASING.md`'s "Version history" for what shipped in every release since
+`v0.1.0`, and which of the later ones are still local-only, not-yet-pushed tags):
 
 | Module | Status |
 |---|---|
@@ -60,11 +63,13 @@ Started as the `OPS-shared-01` scaffolding commit. As of `v0.1.0`, every module 
 | `ownership.json` | **real (`BE-mono-12`, landed)** |
 | `OWNERSHIP.md` | **real, generated render (`OPS-mono-14`, landed)** — run `node bin/check-ownership.mjs --fix` to regenerate after any `ownership.json` change |
 | `migrations.lock.json` | **real, landed** — R7 is fully enforced against consumers now, no more `R7 SKIPPED` warning. |
-| `bin/sync-migrations.mjs` | **real (`OPS-shared-07`, landed)** � see "Adding a migration" below. |
+| `bin/sync-migrations.mjs` | **real (`OPS-shared-07`, landed)** — see "Adding a migration" below. |
 | `scripts/classify-release.mjs` | **real (`OPS-shared-20`, landed)** — see `RELEASING.md` §4. |
 
 The package shell, exports map, build pipeline, and CI are real and passing end-to-end.
-`v0.1.0` is tagged on this state — see `RELEASING.md`.
+`v0.1.0` was the first tag — see `RELEASING.md`'s version history for every release since,
+including which ones are committed/version-bumped locally but **not yet tagged and pushed**
+(that step is always Pram's own manual action, per this project's standing rule).
 
 ## Consuming this package
 
@@ -72,12 +77,18 @@ This is a **git-protocol dependency**, never published to npm (`"private": true`
 `package.json` is deliberate — it blocks an accidental `npm publish`).
 
 ```bash
-pnpm add github:kodekraft-id/kodekraft-shared#v0.1.2
+pnpm add github:kodekraft-id/kodekraft-shared#v0.9.1
 ```
 
 This writes an immutable-by-lockfile pin: the tag is the human-readable pointer, and
 `pnpm-lock.yaml` resolves it to a commit SHA, so `pnpm install --frozen-lockfile` stays
 reproducible even if a tag were force-moved. **Never pin a branch ref (`#main`).**
+
+The tag must already exist on `github.com/kodekraft-id/kodekraft-shared` (pushed, not just
+committed locally) before this can resolve — `pnpm add`/`pnpm install` fail outright against
+a tag that only exists as a local, unpushed `git tag` in this repo's own working copy. Check
+`RELEASING.md`'s "Version history" section (or `git tag --list` in this repo) before pointing
+a consumer at a version newer than what's confirmed pushed.
 
 ```ts
 import { getDb } from "@kodekraft/shared/client";
@@ -100,7 +111,7 @@ and each repo exposes the CLI as a script:
 ```json
 {
   "scripts": { "check:ownership": "kodekraft-check-ownership" },
-  "dependencies": { "@kodekraft/shared": "github:kodekraft-id/kodekraft-shared#v0.1.2" },
+  "dependencies": { "@kodekraft/shared": "github:kodekraft-id/kodekraft-shared#v0.9.1" },
   "kodekraft": {
     "app": "worker-user",
     "dbCompositionRoot": "src/worker/db/client.ts",
@@ -120,7 +131,7 @@ and each repo exposes the CLI as a script:
 ### `check:ownership` rules
 
 Run `pnpm check:ownership` from a consuming repo's root (exit code 1 on any violation, each
-printed as `file:line � [Rule] message`). In this package's own repo, the same binary runs
+printed as `file:line — [Rule] message`). In this package's own repo, the same binary runs
 the package-integrity rules instead.
 
 | Rule | Where | Fails when |
@@ -163,7 +174,7 @@ repo, or repos that have diverged. It never commits, bumps, or tags; do that per
 
 ### Bumping a consumer's pin: widening vs. narrowing
 
-Full rules and worked examples are in `RELEASING.md` (doc 12 �5.6). In short:
+Full rules and worked examples are in `RELEASING.md` (doc 12 §5.6). In short:
 
 - **Widening** (new write grant, new column, new table, new export): only the app that needs
   the new capability bumps its pin; the other repos may stay on the old tag.
@@ -175,12 +186,19 @@ Full rules and worked examples are in `RELEASING.md` (doc 12 �5.6). In short:
 - Semver: `0.x`; **minor** = `ownership.json` / export-surface change, **patch** =
   implementation-only. `node scripts/classify-release.mjs` classifies a commit range for you.
 
-To bump a consumer: change the tag in its `package.json` (`#v0.1.x`), run `pnpm install` so
+To bump a consumer: change the tag in its `package.json` (`#vX.Y.Z`), run `pnpm install` so
 `pnpm-lock.yaml` re-resolves it to a commit SHA, run `pnpm check:ownership`, commit both files.
 
 ### Per-Worker secrets
 
 See `docs/SECRETS.md` for the secrets each Worker needs set before a deploy.
+
+### Deployment runbook
+
+See `docs/DEPLOYMENT.md` for the actual 4-repo rollout procedure — deploy order and why,
+per-repo preconditions (which migrations must be live first), the ownership-guard warn/throw
+rollout status per repo, and the rollback plan. `RELEASING.md` (above) is about releasing
+*this package*; `docs/DEPLOYMENT.md` is about deploying the 4 apps that consume it.
 
 ### The ownership matrix
 
