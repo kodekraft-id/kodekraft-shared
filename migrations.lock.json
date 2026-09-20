@@ -11,5 +11,11 @@
   "0010_template_eternal_grace.sql": "646be4611c0cb75571888875e72ef96a07fc6b7a375fcc92159b98e39a2449e6",
   "0011_wa_template_english_formal.sql": "ba8f308b98cb68aa003a56b86c14dc33daacecbd0de2fa402ce591e103248f7b",
   "0012_template_now_streaming.sql": "48dfcb7197c2f18599f10bbb802eb7a2c13677af0c5e94f0493c76eb1040e92d",
-  "0013_orders_idempotency_key.sql": "ae373f21ec2d273a1907038e2ae6006c6b362bf29e659a445f5aee7480425f58"
+  "0013_orders_idempotency_key.sql": "ae373f21ec2d273a1907038e2ae6006c6b362bf29e659a445f5aee7480425f58",
+  "0014_invitation_tier_duration.sql": "70322903fbb54c58b0d520fb03c9722ddf271a557e1d3c99f5004aecdbbac0a4",
+  "0015_soft_delete_audit_columns.sql": "e8fd1471aa20cf4ab66e1b9f98d97d8f95f1658ecc4dbbf8bef88ddf55fc6634",
+  "0016_testimonials.sql": "0ac4f22ed5fbcb83ceffa4c977e58ff1a70c8a2c7aa55043b32b22dc7288a325",
+  "0017_custom_domains.sql": "b39ea3e16cce2a1434ccba542925427f38fa645674bbaa40eaa025d2e986d655",
+  "0018_photo_cap_override.sql": "e80ea96ff245979de0e8f40daec5bbd94be55f42f3ef175fcf811dab91e44bb2",
+  "0019_activation_observability.sql": "252702385b8a7884b967d7f7ce73712f77206654945868c5377ff11e50679d57"
 }
