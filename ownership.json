@@ -19,6 +19,12 @@
       "readers": ["worker-admin"],
       "note": "PLANNED — not in the live 0001-0012 lineage. Lands as 0015_orders_status_log.sql per doc 12 §6.2. Append-only payment audit trail, owned by worker-landing alongside orders."
     },
+    "order_refunds": {
+      "module": "schema/orders.ts",
+      "writers": { "worker-admin": "*" },
+      "readers": ["worker-landing"],
+      "note": "BE-mono-26 (approved by Pram). PLANNED — the table does not exist yet: it is proposed in doc 17 section 13.6/FR-14 and will be created by BE-wl-34's migration (not yet in migrations.lock.json); declared here ahead of the migration because no check-ownership rule (R1-R7) cross-checks ownership.json against migrations, only consumers' schema mirrors against the matrix (R5). worker-admin creates and progresses every refund (INSERT + UPDATE, unrestricted '*'; no bank details are stored) from the staff queue (BE-admin-19). worker-landing is READ-only, solely to reconcile Midtrans refund notifications against a refund record (BE-wl-38); it writes nothing here (if BE-wl-38 must write a gateway status into this table that needs a separate grant, NOT given here: it records on orders.gateway_status instead). worker-user and worker-undangan have NO access. ownership.json has no verb scoping, so read-only for landing is expressed by omission from writers."
+    },
     "clients": {
       "module": "schema/clients.ts",
       "writers": {

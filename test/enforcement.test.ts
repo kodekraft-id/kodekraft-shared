@@ -336,3 +336,40 @@ describe("BE-mono-25: invitation_domains grants", () => {
     expect(prepared).toEqual([]);
   });
 });
+
+describe("BE-mono-26: order_refunds grants", () => {
+  const as = (app: "worker-landing" | "worker-user" | "worker-admin" | "worker-undangan") => {
+    const { db, prepared } = fakeBinding();
+    return { guarded: getDb(db, app), prepared };
+  };
+
+  it("allows worker-admin INSERT and UPDATE on any order_refunds column", () => {
+    const { guarded } = as("worker-admin");
+    expect(() =>
+      guarded.prepare(`insert into "order_refunds" ("id", "order_id", "status", "reason", "method", "due_at") values (?, ?, ?, ?, ?, ?)`),
+    ).not.toThrow();
+    expect(() =>
+      guarded.prepare(`update "order_refunds" set "status" = ?, "buyer_confirmed_at" = ?, "completed_at" = ? where "id" = ?`),
+    ).not.toThrow();
+  });
+
+  it("rejects every write from worker-landing, worker-user and worker-undangan (fail closed, nothing reaches the binding)", () => {
+    for (const app of ["worker-landing", "worker-user", "worker-undangan"] as const) {
+      const { guarded, prepared } = as(app);
+      expect(() => guarded.prepare(`insert into "order_refunds" ("id", "order_id") values (?, ?)`)).toThrow(OwnershipViolationError);
+      expect(() => guarded.prepare(`update "order_refunds" set "status" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+      expect(() => guarded.prepare(`delete from "order_refunds" where "id" = ?`)).toThrow(OwnershipViolationError);
+      expect(prepared).toEqual([]);
+    }
+  });
+
+  it("allows worker-landing to READ order_refunds (SELECT passes; matrix reader ceiling) but not other apps", async () => {
+    const { guarded } = as("worker-landing");
+    expect(() => guarded.prepare(`select * from "order_refunds" where "order_id" = ?`)).not.toThrow();
+    const { tablesFor, writersOf } = await import("../src/ownership.js");
+    expect(tablesFor("worker-landing", "reader")).toContain("order_refunds");
+    expect(tablesFor("worker-user", "reader")).not.toContain("order_refunds");
+    expect(tablesFor("worker-undangan", "reader")).not.toContain("order_refunds");
+    expect(writersOf("order_refunds")).toEqual(["worker-admin"]);
+  });
+});
