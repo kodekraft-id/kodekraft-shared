@@ -13,7 +13,7 @@ consuming repo for how this matrix is enforced against real code.
 | `admins` | `schema/admins.ts` | worker-admin | — |
 | `app_settings` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
 | `clients` | `schema/clients.ts` | worker-landing (id, name, email, phone, password_hash, token_version, created_at, activation_token_hash, activation_expires_at, activation_issued_at, activation_resend_count, updated_at); worker-user (password_hash, token_version, name, email, phone, updated_at); worker-admin (id, name, email, phone, password_hash, created_at, deleted_at, updated_at) | — |
-| `events` | `schema/content.ts` | worker-user | worker-undangan |
+| `events` | `schema/content.ts` | worker-user | worker-undangan, worker-admin |
 | `gift_accounts` | `schema/content.ts` | worker-user | worker-undangan |
 | `gifts` | `schema/submissions.ts` | worker-undangan; worker-user | worker-admin |
 | `guests` | `schema/guests.ts` | worker-user (id, invitation_id, name, token, group_name, phone, created_at, checked_in_at, checked_in_by, checkin_method, updated_at); worker-undangan (opened_at, opened_count) | worker-landing |

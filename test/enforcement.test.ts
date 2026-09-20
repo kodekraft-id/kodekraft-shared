@@ -373,3 +373,32 @@ describe("BE-mono-26: order_refunds grants", () => {
     expect(writersOf("order_refunds")).toEqual(["worker-admin"]);
   });
 });
+
+describe("0.6.0: invitations.is_demo and events read grant", () => {
+  const apps = ["worker-landing", "worker-user", "worker-admin", "worker-undangan"] as const;
+
+  it("no app may write invitations.is_demo (ops SQL only)", async () => {
+    const { writableColumns } = await import("../src/ownership.js");
+    for (const app of apps) expect(writableColumns("invitations", app)).not.toContain("is_demo");
+    for (const app of apps) {
+      const { db } = fakeBinding();
+      expect(() => getDb(db, app).prepare(`update "invitations" set "is_demo" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+    }
+  });
+
+  it("all four apps can read invitations", async () => {
+    const { ownershipMatrix: ownership } = await import("../src/ownership.js");
+    const inv = ownership.tables.invitations;
+    for (const app of apps) {
+      expect(app in inv.writers || inv.readers.includes(app)).toBe(true);
+    }
+  });
+
+  it("worker-admin can read events but not write it", async () => {
+    const { ownershipMatrix: ownership, writableColumns } = await import("../src/ownership.js");
+    expect(ownership.tables.events.readers).toContain("worker-admin");
+    expect(writableColumns("events", "worker-admin")).toEqual([]);
+    const { db } = fakeBinding();
+    expect(() => getDb(db, "worker-admin").prepare(`update "events" set "title" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+  });
+});

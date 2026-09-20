@@ -198,6 +198,9 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.6.0`** (minor, pending tag) - `ownership.json` only. `events` gains `worker-admin` as a reader (eventAt countdown; pure widening,
+  only worker-admin needs to bump). `invitations.is_demo` (migration 0022) is documented in the table note: it is in no app's writer
+  allowlist (ops SQL only) and readable by all four apps via existing table-level access. Minor per section 3 (any `ownership.json` change).
 - **`v0.5.0`** (minor, pending tag) - `migrations.lock.json` gains `0020_invitation_purchased_addons` (BE-wl-27),
   `0021_domain_lifecycle_and_refunds` (BE-wl-34) and `0022_invitation_is_demo` (BE-wl-41), all purely additive. Minor, following the
   0.3.0 precedent (doc 16 section 6): a lock change is a lockstep DDL obligation (section 2), so a repo that merges the mirrored files
