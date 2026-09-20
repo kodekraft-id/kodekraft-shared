@@ -20,5 +20,6 @@
   "0019_activation_observability.sql": "252702385b8a7884b967d7f7ce73712f77206654945868c5377ff11e50679d57",
   "0020_invitation_purchased_addons.sql": "6fd87c6daaa39c9b95897cb25f501800764fff2f5559f94add2a011c16160aac",
   "0021_domain_lifecycle_and_refunds.sql": "01be42376554d833907d59c74b3bd83f31e6b60a866171df635a7221f698100f",
-  "0022_invitation_is_demo.sql": "c647ae8e841324bb014a2e5d590a0006bb227abd69830ea2cf98dd3582d5b0db"
+  "0022_invitation_is_demo.sql": "c647ae8e841324bb014a2e5d590a0006bb227abd69830ea2cf98dd3582d5b0db",
+  "0023_checkin_test_mode.sql": "95350c4ea98c4d406957ba977d7c4985e0729309284e58199afaf07d93d581c4"
 }

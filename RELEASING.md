@@ -198,6 +198,29 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.9.0`** (minor, pending tag) - `migrations.lock.json` gains `0023_checkin_test_mode.sql` (doc 17 FR-22, ruling 40:
+  owner-side check-in test mode). Two purely additive columns on existing tables: `invitations.checkin_test_mode` and
+  `guests.checked_in_is_test`, both `INTEGER NOT NULL DEFAULT 0 CHECK (col IN (0,1))` — same proven pattern as
+  `is_demo` (0022). `ownership.json` also changes (this is what makes the release minor, not just the lock):
+  `invitations.checkin_test_mode` is writable by worker-user (the owner-only toggle endpoint, FR-22.1) **and**
+  worker-admin (so the pre-existing add-on-revoke endpoint, which already writes `purchased_addons`, can flip test
+  mode back to 0 in the same request when staff revoke the `qrcheckin` add-on — ruling 40 point (e) / OQ-35 "revoke
+  turns test mode off"); `guests.checked_in_is_test` is writable by worker-user only (FR-22.3, alongside the
+  `checked_in_at` column it already owns). **Not a pure-widening release despite both schema changes being additive:**
+  `pnpm classify-release` reports `[LOCKSTEP]` for the `migrations.lock.json` change (per §2, the file must exist in
+  all 4 repos' `migrations/` before any of them bumps past this tag) alongside `[WIDENING]` for the two new column
+  grants — zero `[NARROWING]`. Minor per §3 for two independent reasons: any `ownership.json` change is minor, and a
+  `migrations.lock.json` change is its own lockstep DDL obligation regardless of widening/narrowing (the `v0.3.0`/
+  `v0.5.0` precedent). `src/`, `dist/` and the `exports` map are byte-identical (rebuild produced no diff) —
+  `ownership.json` is read from disk at runtime by `ownership.ts` (`import ownershipData from "../ownership.json"`),
+  not inlined at build time, so this particular change needed no `dist` rebuild. **Deliberately NOT granted:**
+  worker-admin gets no write or read access to `guests` in this release. Erasing the outstanding TEST check-ins that
+  should accompany an admin-triggered add-on revoke (FR-22.4/FR-22.6, OQ-34's full-erase reading) therefore still
+  needs a worker-user-owned write path (e.g. a sweep the next time worker-user touches that invitation's guests),
+  since worker-admin has no presence in `guests` ownership today and gaining one is a bigger widening than one column
+  on a table it already writes; flagged for architecture-analyst/Pram in `ownership.json`'s `invitations`/`guests`
+  notes rather than decided here. No `expires_at_locked` column was added (OQ-30 is explicitly out of scope for this
+  release; Pram ruled `expires_at` stays system-managed only, no staff manual override).
 - **`v0.8.0`** (minor, pending tag) - `tier.ts` gains event-based expiry + a check-in pre-window, a direct product-rule change
   from Pram (2026-09-20), additive on top of `v0.7.0`'s expiry section: `computeExpiresAtFromEvents(events, tier, opts?)` (basis =
   the LATEST effective end across `events`, where one event's effective end is `end_at` when present else 23:59:59.999 WIB on
