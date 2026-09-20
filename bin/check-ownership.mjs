@@ -76,6 +76,14 @@ const R4_BINDING_ACCESS_RE = /\benv\.DB\b/;
 // catches. It can also still theoretically false-POSITIVE on something like a variable literally
 // named `dbPattern` holding a RegExp — a far rarer collision than "any .exec() call whatsoever",
 // which is what actually broke in practice.
+//
+// One further false-positive class remains after the binding-word narrowing above: this regex
+// still can't resolve a receiver's STATIC TYPE, so a real `.batch()`/`.prepare()` call on an
+// ALREADY-GUARDED Drizzle instance (received via dependency injection, typed as the composition
+// root's own exported return type) still matches, even though it isn't a second path to the raw
+// binding. See `getCompositionRootGuardedTypeNames`/`getLocallyGuardedReceiverNames` below
+// (OPS-shared-21 part b) for the separate, additional narrowing that suppresses exactly that
+// case without weakening this one.
 const R4_METHOD_CALL_RE = /\.(?:prepare|batch|exec)\s*\(/g;
 const R4_BINDING_WORDS = new Set(["db", "database", "binding"]);
 // Matches the dotted identifier/call chain immediately preceding a position in a line, e.g.
@@ -144,6 +152,225 @@ function stripCommentsForR4(rawLines) {
   return out;
 }
 
+// ---------------------------------------------------------------------------------------
+// R4 precision fix (OPS-shared-21 part b): guarded-receiver detection.
+//
+// Problem: R4_METHOD_CALL_RE + looksLikeD1BindingCall correctly flag a ".prepare()"/".batch()"/
+// ".exec()" call on anything binding-shaped, but neither can resolve what a receiver's STATIC
+// TYPE actually is — so `this.db.batch(...)` on an already-guarded Drizzle instance (typed as
+// the composition root's own return type, handed to a repository via dependency injection)
+// fires exactly the same as a real raw-binding call would. Confirmed empirically: 35 false
+// positives in invitation-worker-user (every `*.repository.ts` factory function takes a
+// `db: DB` parameter, per its layering refactor) and 1 in invitation-worker-admin
+// (`constructor(private readonly db: DB)`) — never a raw `env.DB`/`D1Database` in either.
+//
+// Fix, chosen deliberately over resolving this via the TypeScript compiler API (out of
+// proportion for a "dependency-free, sub-second" static check per this file's own header — it
+// would need every consuming repo's tsconfig to resolve cleanly, and full-program type-checking
+// is not a sub-second operation): a narrower, still text-based two-step trace, computed once per
+// run —
+//
+//   1. Read `kodekraft.dbCompositionRoot` once and collect every `export type <Name> = ...
+//      ReturnType<...>` alias it declares ("DB" in worker-user/worker-admin/worker-landing,
+//      "Db" in worker-undangan — the capture is name-agnostic on purpose). This IS "the
+//      composition root's return type", read directly off the one file R4 already trusts as
+//      ground truth for where the raw binding may be touched.
+//   2. In each OTHER scanned file, resolve every named import against the composition root's
+//      own absolute path (by import provenance, not by name alone — a coincidentally-same-named
+//      local `type DB` declared elsewhere must NOT count, or this would trivially defeat R4) to
+//      find any local alias bound to one of those guarded type names, then look for a
+//      parameter, TS constructor-parameter-property, class field, or variable declared with
+//      that alias as its EXPLICIT type annotation. Only an explicit `: DB`-shaped annotation
+//      counts — `const db = getDb(env)` with no annotation does not, so this can't be defeated
+//      by simply omitting a type; such a call was never one of the confirmed false positives
+//      and stays flagged, unchanged.
+//
+// A `.prepare()`/`.batch()`/`.exec()` match is only suppressed when its receiver's own base
+// identifier (the LAST segment of the dotted chain — "db" in both "db.batch(" and
+// "this.db.batch(") is one of these confirmed-guarded names for that file.
+//
+// Explicitly NOT weakened by this: `R4_BINDING_ACCESS_RE` ("env.DB" literal text) is untouched —
+// "env" is always the raw Worker bindings object by construction, never an alias for a guarded
+// handle, so no guarded-receiver carve-out applies to it. A raw `D1Database`-typed parameter, or
+// any receiver whose declared type does not trace back to the composition root's own
+// return-type alias, is still flagged exactly as before (confirmed empirically: grepping all 4
+// consuming repos found zero `: D1Database` parameters outside `bindings.ts`/composition roots,
+// and zero call site anywhere that calls `.prepare()/.batch()/.exec()` directly on a bare,
+// unannotated `getDb(env)` result).
+//
+// Scoping: guarded names are resolved per TOP-LEVEL DECLARATION (function or class), not
+// blanket per file. An earlier version of this fix tracked one flat guarded-name set per file,
+// which was verified (during this same change, by deliberately planting the counter-example) to
+// let one legitimately-guarded `db: DB` parameter in one function silently shield an unrelated,
+// genuinely-raw, same-named parameter in a DIFFERENT top-level function/class in the same file —
+// a real false negative, not just a theoretical one. `splitIntoTopLevelChunks` below closes that
+// gap with a brace-depth pass (still no AST): each top-level function/class body — including
+// everything nested inside it, e.g. a factory function's returned object-literal methods, or
+// every method of a class whose guarded parameter lives only in its constructor's signature —
+// is its own chunk, and a receiver is only treated as guarded if its OWN chunk contains a
+// matching declaration. Import resolution stays file-wide on purpose (JS/TS imports are not
+// block-scoped, so that part of the trace is correctly file-wide, not chunk-scoped).
+// ---------------------------------------------------------------------------------------
+function getCompositionRootGuardedTypeNames(compositionRootAbs) {
+  const names = new Set();
+  if (!existsSync(compositionRootAbs)) return names;
+  const lines = stripCommentsForR4(readFileSync(compositionRootAbs, "utf8").split("\n"));
+  const EXPORTED_RETURN_TYPE_ALIAS_RE = /^\s*export\s+type\s+([A-Za-z_$][\w$]*)\s*=.*\bReturnType\s*</;
+  for (const line of lines) {
+    const match = EXPORTED_RETURN_TYPE_ALIAS_RE.exec(line);
+    if (match) names.add(match[1]);
+  }
+  return names;
+}
+
+const R4_IMPORT_NAMED_RE = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+
+// Splits a named-import clause ("A, type B, C as D") into { imported, local } pairs, stripping
+// an inline "type" modifier and resolving an "as" alias to its local binding name.
+function parseNamedImportClause(rawClause) {
+  return rawClause
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const withoutInlineType = part.replace(/^type\s+/, "");
+      const aliasMatch = /^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/.exec(withoutInlineType);
+      return aliasMatch
+        ? { imported: aliasMatch[1], local: aliasMatch[2] }
+        : { imported: withoutInlineType, local: withoutInlineType };
+    });
+}
+
+function stripKnownExtension(p) {
+  return p.replace(/\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i, "");
+}
+
+// True only if `specifier`, resolved relative to the importing file's own directory, points at
+// exactly the same file as the declared composition root (extension-insensitively, the same way
+// TypeScript resolves an extensionless relative specifier). Bare/package specifiers (no leading
+// ".") can never be the composition root and are rejected outright — R3 already governs
+// "@kodekraft/shared" imports separately.
+function specifierResolvesToCompositionRoot(fileDirAbs, specifier, compositionRootAbs) {
+  if (!specifier.startsWith(".")) return false;
+  return stripKnownExtension(resolve(fileDirAbs, specifier)) === stripKnownExtension(compositionRootAbs);
+}
+
+// A parameter (plain, or a TS constructor-parameter-property carrying accessibility/readonly
+// modifiers) typed as one of this file's confirmed-guarded aliases, e.g. "db: DB" in
+// "createFoo(db: DB)" or "constructor(private readonly db: DB)". Runs against the WHOLE
+// (comment-stripped) file text rather than per line, so a parameter list a formatter wrapped
+// across multiple lines is still matched ("\s" matches newlines too).
+function buildGuardedParamRe(aliasNames) {
+  const typeAlternation = aliasNames.map(escapeRegExp).join("|");
+  return new RegExp(
+    `[(,]\\s*(?:(?:public|private|protected|readonly)\\s+)*([A-Za-z_$][\\w$]*)\\s*:\\s*(?:${typeAlternation})\\b`,
+    "g",
+  );
+}
+
+// Same idea for a class field or local variable carrying an explicit guarded-type annotation,
+// e.g. "private db: DB;" or "const db: DB = ...;" — not observed in any of the 4 repos today
+// (constructor-parameter-properties and factory-function parameters cover every real case seen
+// so far), kept for robustness since it costs nothing extra and follows the same
+// declaration-based rule.
+function buildGuardedDeclarationRe(aliasNames) {
+  const typeAlternation = aliasNames.map(escapeRegExp).join("|");
+  return new RegExp(
+    `(?:^|;)\\s*(?:(?:public|private|protected|readonly|const|let|var)\\s+)*([A-Za-z_$][\\w$]*)\\s*:\\s*(?:${typeAlternation})\\b`,
+    "gm",
+  );
+}
+
+// File-wide: the set of local identifier names that resolve — via a relative import genuinely
+// pointing at the composition root — to one of its guarded return-type aliases. Correctly
+// file-wide, not chunk-scoped: an import binding is visible throughout the whole module
+// regardless of where a given top-level declaration sits relative to it.
+function getLocallyGuardedAliasNames(fileText, fileDirAbs, compositionRootAbs, guardedTypeNames) {
+  const localAliases = new Set();
+  for (const [, clause, specifier] of fileText.matchAll(R4_IMPORT_NAMED_RE)) {
+    if (!specifierResolvesToCompositionRoot(fileDirAbs, specifier, compositionRootAbs)) continue;
+    for (const { imported, local } of parseNamedImportClause(clause)) {
+      if (guardedTypeNames.has(imported)) localAliases.add(local);
+    }
+  }
+  return localAliases;
+}
+
+// Splits `fileText` into contiguous, non-overlapping top-level chunks by brace depth: each
+// chunk ends exactly where brace depth returns to 0 (a top-level function/class/interface body,
+// with everything nested inside it, however deep), and picks up wherever the previous chunk
+// left off (so leading imports/types and any depth-0 text between declarations are swept into
+// whichever chunk follows them — harmless, since such interstitial text is never itself a
+// function/class body carrying a guarded parameter). This is a brace-counting approximation,
+// not a tokenizer — a "{"/"}" inside a string, template literal, or regex literal throws the
+// count off — a known, accepted limit shared with `stripCommentsForR4`'s own comment-only
+// scope, used ONLY to decide which declarations are "in scope" for a given receiver, never to
+// decide whether a call is a violation at all.
+function splitIntoTopLevelChunks(fileText) {
+  const boundaries = [0];
+  let depth = 0;
+  for (let i = 0; i < fileText.length; i++) {
+    if (fileText[i] === "{") {
+      depth++;
+    } else if (fileText[i] === "}") {
+      if (depth > 0) depth--;
+      if (depth === 0) boundaries.push(i + 1);
+    }
+  }
+  if (boundaries[boundaries.length - 1] !== fileText.length) boundaries.push(fileText.length);
+
+  const chunks = [];
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    chunks.push({ start: boundaries[i], end: boundaries[i + 1] });
+  }
+  return chunks;
+}
+
+// Annotates each top-level chunk with the receiver names IT ITSELF declares (parameter,
+// constructor-parameter-property, field, or variable) using one of `aliasNames` as an explicit
+// type annotation — scoping guarded names to "this receiver's own enclosing top-level
+// function/class", not the whole file (see the block comment above for why that matters).
+function getGuardedReceiverNamesByChunk(fileText, aliasNames) {
+  const chunks = splitIntoTopLevelChunks(fileText);
+  if (aliasNames.length === 0) return chunks.map((chunk) => ({ ...chunk, names: new Set() }));
+
+  const paramRe = buildGuardedParamRe(aliasNames);
+  const declRe = buildGuardedDeclarationRe(aliasNames);
+  return chunks.map((chunk) => {
+    const chunkText = fileText.slice(chunk.start, chunk.end);
+    const names = new Set();
+    for (const re of [paramRe, declRe]) {
+      for (const match of chunkText.matchAll(re)) names.add(match[1]);
+    }
+    return { start: chunk.start, end: chunk.end, names };
+  });
+}
+
+function guardedNamesAtOffset(chunksWithNames, offset) {
+  const chunk = chunksWithNames.find((c) => offset >= c.start && offset < c.end);
+  return chunk ? chunk.names : new Set();
+}
+
+// The identifier immediately holding the method being called — the LAST segment of the dotted
+// receiver chain ("db" in both "db.batch(" and "this.db.batch("; "dbBinding" in
+// "ctx.dbBinding.exec("). Deliberately the same chain `looksLikeD1BindingCall` already extracts,
+// just narrowed to its final segment, since that is the actual property/parameter that would
+// carry the guarded type annotation — "this"/"ctx" are just the containing object.
+function receiverBaseIdentifier(line, matchIndex) {
+  const prefix = line.slice(0, matchIndex);
+  const chainMatch = R4_RECEIVER_CHAIN_RE.exec(prefix);
+  if (!chainMatch) return null;
+  const segments = chainMatch[1].split(".");
+  const identifierMatch = /^[A-Za-z_$][\w$]*/.exec(segments[segments.length - 1].trim());
+  return identifierMatch ? identifierMatch[0] : null;
+}
+
+function isGuardedReceiver(line, matchIndex, guardedReceiverNames) {
+  if (guardedReceiverNames.size === 0) return false;
+  const base = receiverBaseIdentifier(line, matchIndex);
+  return base !== null && guardedReceiverNames.has(base);
+}
+
 // R3: any specifier that reaches around the package's `exports` map into its internals.
 const R3_PATTERNS = [
   { re: /@kodekraft\/shared\/src(?:[/'"`]|$)/, label: "@kodekraft/shared/src" },
@@ -171,6 +398,18 @@ function lineOf(text, regex) {
 
 function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+// R7 message quality-of-life only (raised during OPS-shared-21, not itself that task's scope —
+// see R7's own call site below for why this is diagnostic text only, never a behavior change):
+// true if `path`'s content, with CRLF line endings normalized to LF, hashes to `expectedHash` —
+// i.e. the ONLY difference from the locked content is line-ending style. Read-only: never
+// touches/renormalizes the working-tree file, and never changes whether R7 reports a violation
+// — it only makes the printed message more actionable when this specific shape of "drift" is
+// actually a Windows checkout artifact (e.g. core.autocrlf) rather than a real migration edit.
+function matchesWhenCrlfNormalized(path, expectedHash) {
+  const normalizedToLf = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  return createHash("sha256").update(normalizedToLf).digest("hex") === expectedHash;
 }
 
 function* walkFiles(root, { excludeDirs = DEFAULT_EXCLUDE_DIRS, extensions } = {}) {
@@ -389,15 +628,37 @@ function checkR4RawBindingContainment(cwd, kodekraft) {
   }
 
   const compositionRootRel = normalizeRel(kodekraft.dbCompositionRoot);
-  if (!existsSync(resolve(cwd, kodekraft.dbCompositionRoot))) {
+  const compositionRootAbs = resolve(cwd, kodekraft.dbCompositionRoot);
+  if (!existsSync(compositionRootAbs)) {
     violations.push(violation("package.json", 1, "R4", `kodekraft.dbCompositionRoot "${kodekraft.dbCompositionRoot}" does not exist.`));
   }
+
+  // Computed ONCE per run, not per scanned file — see the block comment above
+  // getCompositionRootGuardedTypeNames for the full rationale (OPS-shared-21 part b).
+  const guardedTypeNames = getCompositionRootGuardedTypeNames(compositionRootAbs);
 
   for (const abs of walkFiles(cwd, { extensions: CODE_EXTENSIONS })) {
     const rel = normalizeRel(relative(cwd, abs));
     if (isR4Exempt(rel, compositionRootRel)) continue;
 
     const lines = stripCommentsForR4(readFileSync(abs, "utf8").split("\n"));
+    const fileText = lines.join("\n");
+
+    // Per-chunk (not per-file) guarded-receiver names — see splitIntoTopLevelChunks/
+    // getGuardedReceiverNamesByChunk above for why this must be scoped narrower than the whole
+    // file. lineStartOffsets maps a (line, column) match position back to its absolute offset
+    // in `fileText` so the right chunk can be looked up.
+    let chunksWithNames = [];
+    if (guardedTypeNames.size) {
+      const aliasNames = [...getLocallyGuardedAliasNames(fileText, dirname(abs), compositionRootAbs, guardedTypeNames)];
+      if (aliasNames.length) chunksWithNames = getGuardedReceiverNamesByChunk(fileText, aliasNames);
+    }
+    const lineStartOffsets = [];
+    for (let cursor = 0, i = 0; i < lines.length; i++) {
+      lineStartOffsets.push(cursor);
+      cursor += lines[i].length + 1; // +1 for the "\n" joining character
+    }
+
     lines.forEach((line, idx) => {
       if (R4_BINDING_ACCESS_RE.test(line)) {
         violations.push(
@@ -408,6 +669,10 @@ function checkR4RawBindingContainment(cwd, kodekraft) {
 
       for (const match of line.matchAll(R4_METHOD_CALL_RE)) {
         if (!looksLikeD1BindingCall(line, match.index)) continue;
+        if (chunksWithNames.length) {
+          const guardedReceiverNames = guardedNamesAtOffset(chunksWithNames, lineStartOffsets[idx] + match.index);
+          if (isGuardedReceiver(line, match.index, guardedReceiverNames)) continue;
+        }
         violations.push(
           violation(
             rel,
@@ -516,7 +781,15 @@ function checkR7MigrationsLock(cwd, kodekraft, packageRoot) {
     if (!(name in actualHashes)) {
       violations.push(violation(`${relDir}/${name}`, 1, "R7", "missing — present in migrations.lock.json but not found in migrationsDir."));
     } else if (actualHashes[name] !== expectedHash) {
-      violations.push(violation(`${relDir}/${name}`, 1, "R7", "sha256 mismatch — file content has drifted from migrations.lock.json."));
+      const crlfArtifact = matchesWhenCrlfNormalized(join(dirAbs, name), expectedHash);
+      const message = crlfArtifact
+        ? "sha256 mismatch — file content has drifted from migrations.lock.json. This file's content " +
+          "matches the locked hash once CRLF line endings are normalized to LF, which looks like a " +
+          "Windows working-tree checkout artifact (e.g. core.autocrlf converting a committed LF blob on " +
+          "checkout), not real content drift — compare against the committed blob (e.g. `git show " +
+          "HEAD:<path>`) before treating this as a real migration edit."
+        : "sha256 mismatch — file content has drifted from migrations.lock.json.";
+      violations.push(violation(`${relDir}/${name}`, 1, "R7", message));
     }
   }
   for (const name of Object.keys(actualHashes)) {

@@ -136,6 +136,55 @@ describe("check-ownership.mjs — consumer mode", () => {
     expect(output).toContain("no violations found");
   });
 
+  it('R4 does NOT fire on a receiver whose declared type is the composition root\'s own guarded return type ("db: Db" factory-function parameter, or "this.db" via a TS constructor-parameter-property) — fix for OPS-shared-21 part b', () => {
+    const result = run(join(FIXTURES, "consumer-pass"), [], {
+      KODEKRAFT_SHARED_TEST_LOCK_PATH: join(tmpdir(), "does-not-exist-lock.json"),
+    });
+    expect(result.status).toBe(0);
+    const output = result.stdout + result.stderr;
+    expect(output).not.toContain("story-items.repository.ts");
+    expect(output).not.toContain("invitations.repository.ts");
+    expect(output).toContain("no violations found");
+  });
+
+  it("R4 still fails on a genuinely raw/differently-typed receiver even in a file that also legitimately uses the guarded DB type elsewhere — proves the part-b fix doesn't over-widen to the whole file", () => {
+    const result = run(join(FIXTURES, "consumer-fail-r4-guarded-vs-raw"), [], {
+      KODEKRAFT_SHARED_TEST_LOCK_PATH: join(tmpdir(), "does-not-exist-lock.json"),
+    });
+    expect(result.status).toBe(1);
+    const output = result.stdout + result.stderr;
+    const matches = [...output.matchAll(/repo\.ts:(\d+) — \[R4\]/g)];
+    expect(matches).toHaveLength(1);
+    const repoSource = readFileSync(join(FIXTURES, "consumer-fail-r4-guarded-vs-raw", "src", "repo.ts"), "utf8").split("\n");
+    const flaggedLine = repoSource[Number(matches[0][1]) - 1];
+    expect(flaggedLine).toContain("rawDb.prepare");
+  });
+
+  it("R4 still fails on a receiver typed with a LOCAL type alias that merely shares the composition root's type name (\"DB\") without being imported from it — proves the fix resolves import provenance, not just the name", () => {
+    const result = run(join(FIXTURES, "consumer-fail-r4-local-type-collision"), [], {
+      KODEKRAFT_SHARED_TEST_LOCK_PATH: join(tmpdir(), "does-not-exist-lock.json"),
+    });
+    expect(result.status).toBe(1);
+    const output = result.stdout + result.stderr;
+    expect(output).toMatch(/repo\.ts:\d+ — \[R4\]/);
+  });
+
+  it("R4 does NOT let a legitimately-guarded \"db: DB\" parameter in one function shield an unrelated, unannotated \"db\" parameter in a DIFFERENT function in the same file — regression for a real false negative found while building the part-b fix (per-declaration scoping, not per-file)", () => {
+    const result = run(join(FIXTURES, "consumer-fail-r4-cross-function-leakage"), [], {
+      KODEKRAFT_SHARED_TEST_LOCK_PATH: join(tmpdir(), "does-not-exist-lock.json"),
+    });
+    expect(result.status).toBe(1);
+    const output = result.stdout + result.stderr;
+    const matches = [...output.matchAll(/repo\.ts:(\d+) — \[R4\]/g)];
+    expect(matches).toHaveLength(1);
+    const repoSource = readFileSync(join(FIXTURES, "consumer-fail-r4-cross-function-leakage", "src", "repo.ts"), "utf8").split("\n");
+    const flaggedLine = repoSource[Number(matches[0][1]) - 1];
+    expect(flaggedLine).toContain("db.batch([])");
+    // Specifically must be inside untypedBatch, not guarded — assert it's the FIRST occurrence.
+    const untypedBatchLine = repoSource.findIndex((l) => l.includes("db.batch([])"));
+    expect(Number(matches[0][1]) - 1).toBe(untypedBatchLine);
+  });
+
   it("R5 fails when the schema mirror defines a table this app is neither a writer nor a reader of", () => {
     const result = run(join(FIXTURES, "consumer-fail-r5"));
     expect(result.status).toBe(1);
@@ -198,7 +247,21 @@ describe("check-ownership.mjs — R7 (migrations lock), dynamically built fixtur
     writeFileSync(join(fixtureDir, "migrations", "0001_a.sql"), "CREATE TABLE a (id TEXT PRIMARY KEY, extra TEXT);\n");
     const result = run(fixtureDir, [], { KODEKRAFT_SHARED_TEST_LOCK_PATH: lockPath });
     expect(result.status).toBe(1);
-    expect(result.stdout + result.stderr).toContain("sha256 mismatch");
+    const output = result.stdout + result.stderr;
+    expect(output).toContain("sha256 mismatch");
+    // Genuine content drift (not a line-ending artifact) must NOT get the CRLF hint below.
+    expect(output).not.toContain("CRLF");
+  });
+
+  it("R7's mismatch message adds a CRLF-working-tree-artifact hint when the ONLY difference from the locked hash is CRLF vs. LF line endings — message-only, never changes pass/fail (OPS-shared-21 note on R7, not itself in scope for a behavior fix)", () => {
+    const { dir: fixtureDir, lockPath, migrationA } = buildFixture();
+    writeFileSync(join(fixtureDir, "migrations", "0001_a.sql"), migrationA.replace(/\n/g, "\r\n"));
+    const result = run(fixtureDir, [], { KODEKRAFT_SHARED_TEST_LOCK_PATH: lockPath });
+    expect(result.status).toBe(1); // still a violation — this is a message improvement only
+    const output = result.stdout + result.stderr;
+    expect(output).toContain("sha256 mismatch");
+    expect(output).toContain("CRLF");
+    expect(output).toContain("git show HEAD:<path>");
   });
 
   it("fails when a locked migration file is missing from migrationsDir", () => {

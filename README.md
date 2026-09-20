@@ -129,7 +129,7 @@ the package-integrity rules instead.
 | R6 | this repo | `OWNERSHIP.md` is missing or not a fresh render of `ownership.json` |
 | R2' | consumer | no `kodekraft` block, or `kodekraft.app` is missing / not in `ownership.json` |
 | R3 | consumer | any import reaches around the exports map (`@kodekraft/shared/src`, `/dist`, or a relative path into `node_modules`) |
-| R4 | consumer | `env.DB`, or a binding-shaped receiver's `.prepare()/.batch()/.exec()`, appears outside `dbCompositionRoot`. Exempt: `bindings.ts`, `test/**`, `*.test.ts`/`*.spec.ts`. Comment text is ignored. Known limit: it cannot resolve receiver types, so a `.batch()` on an already-guarded Drizzle instance named like a db can still false-positive (`OPS-shared-21` part b, open). |
+| R4 | consumer | `env.DB`, or a binding-shaped receiver's `.prepare()/.batch()/.exec()`, appears outside `dbCompositionRoot`. Exempt: `bindings.ts`, `test/**`, `*.test.ts`/`*.spec.ts`. Comment text is ignored. A receiver explicitly typed (via an import that traces back to `dbCompositionRoot`) as the composition root's own guarded return type is also exempt (`OPS-shared-21` part b, `v0.9.1`) — e.g. a repository's `constructor(private readonly db: DB)` or a factory's `(db: DB)` parameter is not a second path to the raw binding. A raw `D1Database`-typed receiver, or one whose type doesn't trace back to `dbCompositionRoot`, is still flagged. |
 | R5 | consumer | `schemaMirror` defines a table the app neither reads nor writes per `ownership.json` |
 | R7 | consumer | a file in `migrationsDir` differs from, is missing from, or is absent in `migrations.lock.json` (sha256 of the file bytes; note that on Windows with `core.autocrlf` a CRLF working copy hashes differently from the LF that CI checks out) |
 

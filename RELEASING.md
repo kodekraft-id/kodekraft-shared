@@ -198,6 +198,40 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.9.1`** (patch, pending tag) — `bin/check-ownership.mjs` R4 precision fix (`OPS-shared-21` part b). Bump rule
+  applied: **patch**, per §3's own explicit example ("a `check-ownership.mjs` rule getting a false-positive fix") —
+  `ownership.json` and the `exports` map are byte-identical (`pnpm classify-release` reports no changes to either, nor
+  to `migrations.lock.json`), confirming this is implementation-only. R4 previously couldn't resolve a receiver's
+  static type, so a `.prepare()`/`.batch()`/`.exec()` call on an ALREADY-GUARDED Drizzle instance (received via
+  dependency injection, typed as `kodekraft.dbCompositionRoot`'s own exported return type) fired identically to a real
+  raw-binding call. Fixed by tracing, per scanned file: (1) which type alias(es) the composition root exports as
+  `ReturnType<...>` (name-agnostic — matches `DB` in worker-user/-admin/-landing and `Db` in worker-undangan), (2)
+  whether a receiver's own parameter/constructor-parameter-property/field/variable is explicitly annotated with that
+  alias via an import that resolves (by path, not by name) back to the composition root file, scoped per top-level
+  function/class (not blanket per file — an earlier draft of this fix tracked one flat per-file set and was proven,
+  by deliberately planting the counter-example during this same change, to let one legitimately-guarded `db: DB`
+  parameter in one function shield an unrelated, genuinely-raw same-named parameter in a different function in the
+  same file; `splitIntoTopLevelChunks` closes that gap). Chose this narrower text-based trace over the TypeScript
+  compiler API as disproportionate for a "dependency-free, sub-second" static check that would otherwise need every
+  consuming repo's tsconfig to resolve. Verified empirically against all 4 consuming repos (before -> after, this
+  change only): worker-user 35 R4 -> 0 R4, worker-admin 1 R4 -> 0 R4, worker-landing 0 R4 -> 0 R4, worker-undangan 0
+  R4 -> 0 R4; each repo's only remaining violations are the pre-existing, unrelated 13 `[R7]` CRLF-checkout artifacts
+  (see below) — zero new violations anywhere, and every repo's git working tree was confirmed untouched after
+  verification. No-false-negative proof: planted a real raw-binding violation (a `D1Database`-typed parameter calling
+  `.prepare()`, a literal `env.DB.prepare()`, and an unannotated binding-shaped parameter calling `.batch()`, plus a
+  correctly-guarded `db: DB` sibling function in the SAME file) in a temp file inside `invitation-worker-user`,
+  confirmed the fixed checker still caught exactly the 3 genuine violations and left the guarded one alone, then
+  deleted the file (`git status` confirmed clean before and after, nothing committed there). Added regression tests
+  covering both directions in `test/check-ownership.test.ts` plus 4 new fixtures: guarded receiver not flagged
+  (factory-function parameter and constructor-parameter-property, including an aliased import and a non-`DB` alias
+  spelling), a raw/differently-typed receiver still flagged in a file that also legitimately uses the guarded type,
+  a same-named-but-not-imported-from-the-composition-root local type still flagged (import-provenance, not name
+  matching), and the cross-function-leakage false negative found and fixed during this same change. Also improves
+  R7's sha256-mismatch message (diagnostic text only, never changes pass/fail): when a mismatched file's content
+  matches the locked hash once CRLF is normalized to LF, the message now says so and points at comparing against the
+  committed blob — this does NOT fix the 13 CRLF-checkout-artifact violations `[R7]` currently reports in each of the
+  4 consuming repos (confirmed real: this message's own CRLF-normalization check matches for all 13 in each repo),
+  which remain open and out of scope for this release; do not "fix" them by renormalizing working-tree files.
 - **`v0.9.0`** (minor, pending tag) - `migrations.lock.json` gains `0023_checkin_test_mode.sql` (doc 17 FR-22, ruling 40:
   owner-side check-in test mode). Two purely additive columns on existing tables: `invitations.checkin_test_mode` and
   `guests.checked_in_is_test`, both `INTEGER NOT NULL DEFAULT 0 CHECK (col IN (0,1))` — same proven pattern as

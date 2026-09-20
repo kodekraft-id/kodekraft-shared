@@ -1,0 +1,10 @@
+{
+  "name": "fixture-consumer-fail-r4-guarded-vs-raw",
+  "private": true,
+  "kodekraft": {
+    "app": "worker-undangan",
+    "dbCompositionRoot": "src/db/client.ts",
+    "schemaMirror": "src/db/schema.ts",
+    "migrationsDir": "migrations"
+  }
+}
