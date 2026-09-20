@@ -198,6 +198,11 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.5.0`** (minor, pending tag) - `migrations.lock.json` gains `0020_invitation_purchased_addons` (BE-wl-27),
+  `0021_domain_lifecycle_and_refunds` (BE-wl-34) and `0022_invitation_is_demo` (BE-wl-41), all purely additive. Minor, following the
+  0.3.0 precedent (doc 16 section 6): a lock change is a lockstep DDL obligation (section 2), so a repo that merges the mirrored files
+  must pin this version in the same change. `ownership.json`, `src/` and `dist/` are unchanged. `0020` (not the earmarked slot for
+  BE-wl-03) is used contiguously because sync-migrations forbids gaps below the locked maximum. `v0.4.0` is still untagged.
 - **`v0.4.0`** (minor, pending tag) — tier x add-on model (BE-mono-23/24/25/26). `tier.ts` gains the
   effective-capability API (`parsePurchasedAddons`, `getEffectiveCapabilities`, `maxUsefulGalleryUnits`,
   `PHOTO_CEILING`, optional trailing `addons` param on `hasFeature`/`getEffectivePhotoCap`). **VALUE CHANGE
