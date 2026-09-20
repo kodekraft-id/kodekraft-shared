@@ -53,3 +53,47 @@ export declare function getEffectiveCapabilities(tier: PackageTier, addons?: Pur
 /** Computes `invitations.expires_at` at publish time. Pure — no D1 access. The `null` branch is
  * legacy/defensive only (no tier has a null duration any more). */
 export declare function computeExpiresAt(activatedAt: Date, tier: PackageTier): Date | null;
+/** Dashboard read-only grace after `expires_at` (OQ-20: "~30 days"). One constant, not per-caller. */
+export declare const EXPIRY_GRACE_DAYS = 30;
+/** Lifecycle state of an invitation relative to its tier time limit. */
+export type InvitationExpiryState = "active" | "grace" | "locked";
+/** Minimal row shape the expiry helpers need; both fields optional/nullable so a raw D1 row, a
+ * partial select, or a legacy row all work. `is_demo` is INTEGER 0/1: only `=== 1` counts as demo. */
+export interface ExpirableInvitation {
+    is_demo?: number | null;
+    expires_at?: string | Date | null;
+}
+/** Minimal `invitation_domains` shape for {@link isDomainActive}. */
+export interface DomainLifecycle {
+    status?: string | null;
+    expires_at?: string | Date | null;
+}
+/**
+ * Parses a stored timestamp to epoch ms. Accepts a `Date`, UTC ISO (`...Z`), an offset ISO
+ * (`...+07:00`), and a zone-less string (`YYYY-MM-DD HH:MM:SS` from SQLite `datetime('now')`, or
+ * `YYYY-MM-DDTHH:MM:SS`), which is interpreted as UTC. Returns `null` for null/undefined/empty/
+ * unparseable input.
+ */
+export declare function parseTimestampMs(value: string | Date | null | undefined): number | null;
+/**
+ * True when the invitation's tier time limit has passed (`expires_at <= now`, boundary inclusive).
+ * `false` for demos (`is_demo === 1`, even with a past `expires_at`), for NULL/missing `expires_at`
+ * (legacy rows: "not expired"), and for an unparseable `expires_at` (fail-open: never lock a
+ * customer on garbage). A null/undefined row is `false`.
+ */
+export declare function isInvitationExpired(row: ExpirableInvitation | null | undefined, now?: Date): boolean;
+/**
+ * True when the dashboard is LOCKED: `now >= expires_at + graceDays` (boundary inclusive). Between
+ * `expires_at` and that instant the dashboard is read-only. Demos and NULL `expires_at` are never
+ * locked. `graceDays` defaults to {@link EXPIRY_GRACE_DAYS}; a negative/non-finite value falls back
+ * to the default.
+ */
+export declare function isInvitationLocked(row: ExpirableInvitation | null | undefined, now?: Date, graceDays?: number): boolean;
+/** `active` (not expired) | `grace` (expired, dashboard read-only + export) | `locked` (grace over). */
+export declare function getInvitationExpiryState(row: ExpirableInvitation | null | undefined, now?: Date, graceDays?: number): InvitationExpiryState;
+/**
+ * Whether a custom domain may be served (doc 17 FR-15.2 / OQ-17): `status === 'active'` AND the
+ * domain's own `expires_at` is NULL or in the future (`> now`) AND the invitation is within its
+ * active period (demos exempt, via {@link isInvitationExpired}). A null/missing domain is inactive.
+ */
+export declare function isDomainActive(domain: DomainLifecycle | null | undefined, invitation: ExpirableInvitation | null | undefined, now?: Date): boolean;

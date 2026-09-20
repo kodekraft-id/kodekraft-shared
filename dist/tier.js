@@ -125,3 +125,89 @@ export function computeExpiresAt(activatedAt, tier) {
     d.setUTCMonth(d.getUTCMonth() + months);
     return d;
 }
+// ---------------------------------------------------------------------------------------------
+// Expiry / grace / demo exemption (BE-mono-28, doc 17 section 16 + OQ-20 + OQ-17). Pure functions,
+// injectable `now`, no D1 access, no HttpError. ONE implementation of the demo rule for every
+// consumer (BE-user-07/23/27, BE-undangan-10, BE-admin-13/24, BE-wl-40).
+// ---------------------------------------------------------------------------------------------
+/** Dashboard read-only grace after `expires_at` (OQ-20: "~30 days"). One constant, not per-caller. */
+export const EXPIRY_GRACE_DAYS = 30;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const ISO_HAS_ZONE = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
+const SQLITE_DATETIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
+/**
+ * Parses a stored timestamp to epoch ms. Accepts a `Date`, UTC ISO (`...Z`), an offset ISO
+ * (`...+07:00`), and a zone-less string (`YYYY-MM-DD HH:MM:SS` from SQLite `datetime('now')`, or
+ * `YYYY-MM-DDTHH:MM:SS`), which is interpreted as UTC. Returns `null` for null/undefined/empty/
+ * unparseable input.
+ */
+export function parseTimestampMs(value) {
+    if (value === null || value === undefined)
+        return null;
+    if (value instanceof Date) {
+        const ms = value.getTime();
+        return Number.isNaN(ms) ? null : ms;
+    }
+    if (typeof value !== "string")
+        return null;
+    let normalized = value.trim();
+    if (normalized === "")
+        return null;
+    if (SQLITE_DATETIME.test(normalized))
+        normalized = normalized.replace(" ", "T");
+    if (!ISO_HAS_ZONE.test(normalized))
+        normalized += "Z";
+    const ms = Date.parse(normalized);
+    return Number.isNaN(ms) ? null : ms;
+}
+function isDemo(row) {
+    return row?.is_demo === 1;
+}
+/**
+ * True when the invitation's tier time limit has passed (`expires_at <= now`, boundary inclusive).
+ * `false` for demos (`is_demo === 1`, even with a past `expires_at`), for NULL/missing `expires_at`
+ * (legacy rows: "not expired"), and for an unparseable `expires_at` (fail-open: never lock a
+ * customer on garbage). A null/undefined row is `false`.
+ */
+export function isInvitationExpired(row, now = new Date()) {
+    if (!row || isDemo(row))
+        return false;
+    const expiresMs = parseTimestampMs(row.expires_at);
+    if (expiresMs === null)
+        return false;
+    return expiresMs <= now.getTime();
+}
+/**
+ * True when the dashboard is LOCKED: `now >= expires_at + graceDays` (boundary inclusive). Between
+ * `expires_at` and that instant the dashboard is read-only. Demos and NULL `expires_at` are never
+ * locked. `graceDays` defaults to {@link EXPIRY_GRACE_DAYS}; a negative/non-finite value falls back
+ * to the default.
+ */
+export function isInvitationLocked(row, now = new Date(), graceDays = EXPIRY_GRACE_DAYS) {
+    if (!row || isDemo(row))
+        return false;
+    const expiresMs = parseTimestampMs(row.expires_at);
+    if (expiresMs === null)
+        return false;
+    const days = Number.isFinite(graceDays) && graceDays >= 0 ? graceDays : EXPIRY_GRACE_DAYS;
+    return expiresMs + days * MS_PER_DAY <= now.getTime();
+}
+/** `active` (not expired) | `grace` (expired, dashboard read-only + export) | `locked` (grace over). */
+export function getInvitationExpiryState(row, now = new Date(), graceDays = EXPIRY_GRACE_DAYS) {
+    if (!isInvitationExpired(row, now))
+        return "active";
+    return isInvitationLocked(row, now, graceDays) ? "locked" : "grace";
+}
+/**
+ * Whether a custom domain may be served (doc 17 FR-15.2 / OQ-17): `status === 'active'` AND the
+ * domain's own `expires_at` is NULL or in the future (`> now`) AND the invitation is within its
+ * active period (demos exempt, via {@link isInvitationExpired}). A null/missing domain is inactive.
+ */
+export function isDomainActive(domain, invitation, now = new Date()) {
+    if (!domain || domain.status !== "active")
+        return false;
+    const domainExpiresMs = parseTimestampMs(domain.expires_at);
+    if (domainExpiresMs !== null && domainExpiresMs <= now.getTime())
+        return false;
+    return !isInvitationExpired(invitation, now);
+}

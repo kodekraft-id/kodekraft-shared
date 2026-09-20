@@ -198,6 +198,11 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.7.0`** (minor, pending tag) - `tier.ts` gains the expiry helpers (BE-mono-28, doc 17 section 16): `isInvitationExpired`,
+  `isInvitationLocked`, `getInvitationExpiryState`, `isDomainActive`, `parseTimestampMs`, `EXPIRY_GRACE_DAYS` (30). Demos (`is_demo === 1`)
+  never expire; NULL `expires_at` = not expired; accepts UTC `Z`, `+07:00` offsets and zone-less SQLite datetimes (read as UTC). Pure
+  widening (new exports on the existing `./tier` entry); no `ownership.json` or `migrations.lock.json` change.
+
 - **`v0.6.0`** (minor, pending tag) - `ownership.json` only. `events` gains `worker-admin` as a reader (eventAt countdown; pure widening,
   only worker-admin needs to bump). `invitations.is_demo` (migration 0022) is documented in the table note: it is in no app's writer
   allowlist (ops SQL only) and readable by all four apps via existing table-level access. Minor per section 3 (any `ownership.json` change).
