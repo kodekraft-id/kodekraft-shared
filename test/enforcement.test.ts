@@ -293,3 +293,46 @@ describe("BE-mono-24: invitations.purchased_addons ownership", () => {
     expect(writableColumns("invitations", "worker-undangan")).toEqual([]);
   });
 });
+
+describe("BE-mono-25: invitation_domains grants", () => {
+  const as = (app: "worker-landing" | "worker-user" | "worker-admin" | "worker-undangan") => {
+    const { db, prepared } = fakeBinding();
+    return { guarded: getDb(db, app), prepared };
+  };
+
+  it("allows worker-landing's provisioning INSERT ... ON CONFLICT(domain) DO NOTHING", () => {
+    const { guarded } = as("worker-landing");
+    expect(() =>
+      guarded.prepare(
+        `insert into "invitation_domains" ("id", "invitation_id", "domain", "kind", "status", "requested_at", "order_id", "price_idr", "term_months") values (?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict ("domain") do nothing`,
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects worker-landing writing staff/lifecycle columns (provider_ref, verified_at, registered_at, expires_at, removed_reason)", () => {
+    const { guarded, prepared } = as("worker-landing");
+    for (const column of ["provider_ref", "verification_details", "verified_at", "registered_at", "expires_at", "removed_reason"]) {
+      expect(() => guarded.prepare(`update "invitation_domains" set "${column}" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+    }
+    expect(() =>
+      guarded.prepare(`insert into "invitation_domains" ("id", "domain", "provider_ref") values (?, ?, ?)`),
+    ).toThrow(OwnershipViolationError);
+    expect(prepared).toEqual([]);
+  });
+
+  it("allows worker-admin to UPDATE the domain column (staff renames to an agreed alternative) and the new lifecycle columns", () => {
+    const { guarded } = as("worker-admin");
+    expect(() => guarded.prepare(`update "invitation_domains" set "domain" = ?, "updated_at" = ? where "id" = ?`)).not.toThrow();
+    expect(() =>
+      guarded.prepare(`update "invitation_domains" set "registered_at" = ?, "expires_at" = ?, "removed_reason" = ? where "id" = ?`),
+    ).not.toThrow();
+  });
+
+  it("keeps worker-user's insert/request access and rejects worker-undangan (read-only)", () => {
+    expect(() => as("worker-user").guarded.prepare(`insert into "invitation_domains" ("id", "invitation_id", "domain") values (?, ?, ?)`)).not.toThrow();
+    const { guarded, prepared } = as("worker-undangan");
+    expect(() => guarded.prepare(`update "invitation_domains" set "status" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+    expect(() => guarded.prepare(`insert into "invitation_domains" ("id") values (?)`)).toThrow(OwnershipViolationError);
+    expect(prepared).toEqual([]);
+  });
+});
