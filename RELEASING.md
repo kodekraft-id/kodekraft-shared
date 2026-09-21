@@ -198,6 +198,14 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.11.0`** (minor, pending tag) - `migrations.lock.json` gains `0025_template_section_bg_all.sql`. Pram ruled
+  (2026-09-21) that every section on every template must accept an uploaded background, so worker-undangan's seven
+  renderers were changed to honour `sections.bg_r2_key` everywhere and this migration sets all seven manifests to the
+  full 12 keys. Bump rule applied: **minor**, same lockstep-DDL rule as `v0.10.0` - a lock change is a minor bump
+  regardless of what else did or did not widen. `ownership.json` and the `exports` map are byte-identical; `src/` is
+  untouched. **This tag contains `v0.10.0`'s lock entry as well, so tag `v0.11.0` ONLY** - `v0.10.0` was never
+  tagged and does not need its own tag.
+
 - **`v0.10.0`** (minor, pending tag) - `migrations.lock.json` gains `0024_template_section_bg_keys.sql` (`BE-undangan-08`:
   a per-section, per-template background-image manifest replacing the coarse `templates.supports_section_bg` boolean).
   Bump rule applied: **minor**, per §3's lockstep-DDL rule - a `migrations.lock.json` change is a minor bump

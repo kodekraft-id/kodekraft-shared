@@ -22,5 +22,6 @@
   "0021_domain_lifecycle_and_refunds.sql": "01be42376554d833907d59c74b3bd83f31e6b60a866171df635a7221f698100f",
   "0022_invitation_is_demo.sql": "c647ae8e841324bb014a2e5d590a0006bb227abd69830ea2cf98dd3582d5b0db",
   "0023_checkin_test_mode.sql": "95350c4ea98c4d406957ba977d7c4985e0729309284e58199afaf07d93d581c4",
-  "0024_template_section_bg_keys.sql": "0739258fc49e7dff1ac4ee6589a1d6023a5d876764d9abe1bb9b5dc9e823f041"
+  "0024_template_section_bg_keys.sql": "0739258fc49e7dff1ac4ee6589a1d6023a5d876764d9abe1bb9b5dc9e823f041",
+  "0025_template_section_bg_all.sql": "de937aa4cac639783b6cfd6f1b2e1f5f43f8855fcd6c3c2b5dd26f29fd601cb5"
 }
