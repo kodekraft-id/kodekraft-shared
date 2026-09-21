@@ -198,6 +198,15 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.10.0`** (minor, pending tag) - `migrations.lock.json` gains `0024_template_section_bg_keys.sql` (`BE-undangan-08`:
+  a per-section, per-template background-image manifest replacing the coarse `templates.supports_section_bg` boolean).
+  Bump rule applied: **minor**, per §3's lockstep-DDL rule - a `migrations.lock.json` change is a minor bump
+  regardless of whether anything else widened, because all 4 app repos must hold the new file byte-identically before
+  any of them bumps past this tag or R7 fails their CI with "unexpected file". `ownership.json` is byte-identical:
+  the new column sits on `templates`, a table every app already reads and none writes at runtime (it is seeded by
+  migration only), so no grant changed and no app gained a write. `src/` and the `exports` map are untouched - this
+  release carries the lock entry and nothing else.
+
 - **`v0.9.1`** (patch, pending tag) — `bin/check-ownership.mjs` R4 precision fix (`OPS-shared-21` part b). Bump rule
   applied: **patch**, per §3's own explicit example ("a `check-ownership.mjs` rule getting a false-positive fix") —
   `ownership.json` and the `exports` map are byte-identical (`pnpm classify-release` reports no changes to either, nor
