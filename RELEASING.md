@@ -198,6 +198,20 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+- **`v0.12.0`** (minor, pending tag) - NEW EXPORT `@kodekraft/shared/domain-name` (`BE-mono-32`): the custom-domain
+  name rules that worker-landing (checkout) and worker-user (dashboard) each had their own copy of. Bump rule
+  applied: **minor**, per §3 - a new export is a widening, so only the apps that need it bump their pin and the
+  other two can stay on `v0.11.0` indefinitely. `ownership.json` and `migrations.lock.json` are byte-identical.
+  The two copies had diverged TWICE: (1) found 2026-09-20, worker-user had neither the reserved-label list nor
+  the 3-character minimum, so the dashboard could register a name checkout refused; (2) found 2026-09-21 while
+  writing this module, the hand-patch for (1) aligned only the list and the minimum, not the algorithm - checkout
+  strips a scheme/`www.`/path before validating while the dashboard split the name into DNS labels and demanded
+  exactly three, so `www.budi.my.id` was accepted by one and rejected by the other. worker-landing's algorithm is
+  canonical here: it is the shipped money path, its own header already called it authoritative, and it is the more
+  permissive of the two - so adopting it can only make the dashboard accept MORE of what checkout already accepts,
+  never less, which is the only safe direction (the opposite could create a paid-but-unregisterable name).
+  13 tests, including one that pins each divergence so neither can silently return.
+
 - **`v0.11.0`** (minor, pending tag) - `migrations.lock.json` gains `0025_template_section_bg_all.sql`. Pram ruled
   (2026-09-21) that every section on every template must accept an uploaded background, so worker-undangan's seven
   renderers were changed to honour `sections.bg_r2_key` everywhere and this migration sets all seven manifests to the
