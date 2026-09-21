@@ -81,14 +81,32 @@ Workers.
 | `REFRESH_TOKEN_SECRET` | yes | as worker-user |
 | `INTERNAL_KEY` | yes | calls to worker-landing over the `LANDING` service binding (order reprovision, resend activation) are rejected; must equal landing's value |
 | `CF_API_TOKEN` | only for custom domains | domain Verifikasi / Aktifkan / Hapus fail closed with RC 99; everything else works |
+| `CF_ANALYTICS_API_TOKEN` | only for usage monitoring | the daily usage-monitoring cron logs `usage_monitoring.skipped` and returns without calling Cloudflare — **you get no free-tier ceiling alerts at all**; nothing else is affected |
 
 `CF_API_TOKEN` is a Cloudflare API token with exactly `Zone:Zone:Read` and
 `Zone:Workers Routes:Edit` (see "Getting the Cloudflare-issued values"). Never a Global API Key.
+
+`CF_ANALYTICS_API_TOKEN` is a **separate, least-privilege** token with only
+`Account Analytics:Read` — deliberately not the same token as `CF_API_TOKEN` above, which can
+edit Workers routes. Pointing both secrets at one token works if you would rather provision
+only one; the split is a precaution, not a requirement.
 
 Non-secret `[vars]`: `JWT_EXPIRES_IN_SEC`, `REFRESH_EXPIRES_IN_SEC`, `PUBLIC_INVITATION_BASE_URL`
 (unused by admin, kept so shared types compile), `UNDANGAN_WORKER_NAME` (script name that
 custom-domain routes point at; `worker-undangan`). Bindings: D1 `DB`, R2 `MEDIA`, service binding
 `LANDING` -> `worker-landing` (deploy worker-landing first so the binding can resolve).
+
+worker-admin is the only Worker with `[triggers]`: two daily crons, `0 3 * * *` (media
+retention) and `0 23 * * *` (usage monitoring). Two `[vars]` control them, and **both are
+deliberately left unset in `wrangler.toml`**, so a fresh deploy starts in the safe state:
+
+| Var | Unset (default) | Set it to |
+|---|---|---|
+| `CF_ACCOUNT_ID` | usage-monitoring cron skips every run — no usage history, no alerts | your Cloudflare account id. Not a secret (an identifier, not a credential), so it belongs in `wrangler.toml` `[vars]`, not `wrangler secret put`. Needed together with `CF_ANALYTICS_API_TOKEN`; either one missing skips the run |
+| `MEDIA_RETENTION_MODE` | media-retention cron runs **dry** — logs the R2 objects it would delete, deletes nothing | `"enabled"`, and only after reading a few nights of dry-run logs and agreeing with what they list. This cron permanently deletes R2 objects; there is no undo |
+
+Leaving both unset is a valid first deploy: the Worker serves traffic normally, one cron is
+inert and the other only logs.
 
 ## worker-undangan (`invitation.kodekraft.id`)
 
@@ -143,6 +161,36 @@ Caveat: the custom-domain code in worker-admin has only been tested against fake
 real Cloudflare. Try the whole flow on a throwaway zone first (see worker-admin's custom-domain
 runbook).
 
+### 3. `CF_ANALYTICS_API_TOKEN` and `CF_ACCOUNT_ID` (worker-admin, usage monitoring)
+
+The daily usage cron reads the Cloudflare GraphQL Analytics API to track how close the account is
+to the free-tier ceilings (Workers requests, D1 rows read/written, R2 storage) and warns at 70%.
+
+1. **Account id**: Cloudflare dashboard -> any zone's **Overview** -> right-hand sidebar,
+   **Account ID**. Copy it into worker-admin's `wrangler.toml` `[vars]` as
+   `CF_ACCOUNT_ID = "..."`. It is not a secret.
+2. **Token**: **My Profile** -> **API Tokens** -> **Create Token** -> **Create Custom Token**.
+3. Permissions, exactly one: **Account > Account Analytics > Read**. Nothing else — this token
+   only ever reads numbers.
+4. Account Resources: **Include > the Kodekraft account**. No zone resources needed.
+5. Create, copy the token (shown once), then run inside `invitation-worker-admin`:
+   `wrangler secret put CF_ANALYTICS_API_TOKEN`.
+
+Two caveats worth knowing before you trust the numbers:
+
+- The GraphQL dataset/field names (`workersInvocationsAdaptive`, `d1AnalyticsAdaptiveGroups`,
+  `r2StorageAdaptiveGroups`) are **unverified against a real account**. If the first runs log
+  `usage_monitoring.analytics_fetch_failed`, the query shape is the first thing to check.
+- A token missing `Account Analytics:Read` does **not** produce an HTTP error — Cloudflare
+  answers `200` with a top-level `errors` array. worker-admin rejects that as a failed run
+  rather than storing a snapshot of zeros, so a mis-scoped token shows up as
+  `analytics_fetch_failed` in the logs and an empty usage trend, never as a falsely healthy one.
+
+**Alerts are logged, not delivered.** A 70% breach writes a loud
+`usage_monitoring.alert_not_delivered` error to the Workers log and stops there: worker-admin has
+no Resend/Fonnte credentials, so no email or WhatsApp is sent to anyone. Until that is wired,
+treat the Workers log (or a log-drain alert on that event name) as the alerting channel.
+
 ## After every fresh deploy
 
 Run in each Worker's repo unless noted.
@@ -155,5 +203,13 @@ Run in each Worker's repo unless noted.
       the Turnstile widget lists `invitation.kodekraft.id` plus every custom domain.
 - [ ] worker-admin: `CF_API_TOKEN` set if custom domains are in use; `LANDING` service binding
       resolves (worker-landing deployed).
+- [ ] worker-admin: `CF_ANALYTICS_API_TOKEN` set and `CF_ACCOUNT_ID` filled in `[vars]` if you
+      want free-tier usage alerts; otherwise accept that the cron skips silently. Check the next
+      day's logs for `usage_monitoring.run_complete` (working) vs `usage_monitoring.skipped`
+      (not configured) vs `usage_monitoring.analytics_fetch_failed` (configured but the query or
+      token scope is wrong).
+- [ ] worker-admin: `MEDIA_RETENTION_MODE` left **unset** on the first deploy. Read the
+      `media_retention.dry_run` logs for a few nights before setting it to `"enabled"` — it
+      deletes R2 objects permanently.
 - [ ] D1 migrations applied (`migrations/` in each repo; shared DB `undangan-db`).
 - [ ] Smoke test: storefront loads, admin login works, a guest link opens and an RSVP submits (200).
