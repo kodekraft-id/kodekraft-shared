@@ -29,6 +29,17 @@ feature cycle across all 4 app repos.
 - Never add a `Co-Authored-By: Claude` or any other Claude/Anthropic
   attribution line to any commit message — commits are authored solely by
   Pram.
-- Claude (and any subagent it dispatches) may commit locally but must NEVER
-  run `git push` — Pram always pushes himself, for every repo, no
-  exceptions.
+- **Subagents** may commit locally but must NEVER run `git push` — a
+  subagent's work is pushed only by the orchestrating session, after that
+  session has independently verified it.
+- The **main session** may push to the app repos and `kodekraft-shared`
+  (Pram granted this on 2026-09-20, replacing the earlier "never push"
+  rule), and may create and push **tags** (Pram granted this on 2026-09-21
+  and confirmed it is **permanent**, replacing the earlier "tags are Pram's
+  alone" rule). Follow `kodekraft-shared/RELEASING.md` §3 for which version
+  a change warrants, and remember the lockstep-DDL rule: a
+  `migrations.lock.json` change is a minor bump, and the 4 app repos' pins
+  move with it.
+- Still Pram's alone, never Claude's: anything touching **production** —
+  `wrangler deploy`, `wrangler secret put`, and any D1 command with
+  `--remote`.
