@@ -6,7 +6,7 @@ import {
   MIN_LABEL_LENGTH,
   RESERVED_LABEL_LIST,
   normalizeDomainName,
-} from "../src/domain-name";
+} from "../src/domain-name.js";
 
 const ok = (raw: string) => {
   const r = normalizeDomainName(raw);
