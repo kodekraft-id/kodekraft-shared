@@ -198,7 +198,20 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
-- **`v0.12.0`** (minor, pending tag) - NEW EXPORT `@kodekraft/shared/domain-name` (`BE-mono-32`): the custom-domain
+- **`v0.13.0`** (minor, LOCKSTEP) - `migrations.lock.json` gains `0026_event_label_rename.sql`, and
+  `invitations.event_label` is granted to the same three writers `event_type` already had (worker-landing,
+  worker-user, worker-admin). Bump rule applied: **minor**, per section 2's `migrations.lock.json` clause - a lock
+  change is a lockstep DDL obligation regardless of the DDL itself being purely additive, so all 4 app pins move
+  with it. The migration is `BE-wl-04`, authored as `0026` because the `0019` its task text names was taken by
+  `0019_activation_observability.sql` long ago (landing doc 16 section 12 records the renumbering). It adds
+  `invitations.event_label` and `wa_templates.tag` as free TEXT and backfills both 1:1 from `event_type`; the old
+  columns are NOT dropped - that is `BE-wl-06`, gated on a production burn-in. `wa_templates.tag` needed no grant
+  change (worker-admin already holds unrestricted write there). Both grants are INERT until `BE-wl-05` ships the
+  first code that writes them, matching the `checkin_test_mode` precedent: the ownership grant lands at authoring
+  time, the app `schema.ts` mirror does NOT - an early mirror is what would break a production select(), not an
+  early grant.
+
+- **`v0.12.0`** (minor, tagged) - NEW EXPORT `@kodekraft/shared/domain-name` (`BE-mono-32`): the custom-domain
   name rules that worker-landing (checkout) and worker-user (dashboard) each had their own copy of. Bump rule
   applied: **minor**, per §3 - a new export is a widening, so only the apps that need it bump their pin and the
   other two can stay on `v0.11.0` indefinitely. `ownership.json` and `migrations.lock.json` are byte-identical.
@@ -212,7 +225,7 @@ no republish step, because there is no npm registry in this flow at all.
   never less, which is the only safe direction (the opposite could create a paid-but-unregisterable name).
   13 tests, including one that pins each divergence so neither can silently return.
 
-- **`v0.11.0`** (minor, pending tag) - `migrations.lock.json` gains `0025_template_section_bg_all.sql`. Pram ruled
+- **`v0.11.0`** (minor, tagged) - `migrations.lock.json` gains `0025_template_section_bg_all.sql`. Pram ruled
   (2026-09-21) that every section on every template must accept an uploaded background, so worker-undangan's seven
   renderers were changed to honour `sections.bg_r2_key` everywhere and this migration sets all seven manifests to the
   full 12 keys. Bump rule applied: **minor**, same lockstep-DDL rule as `v0.10.0` - a lock change is a minor bump

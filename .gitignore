@@ -4,3 +4,5 @@ node_modules/
 
 # NOTE: dist/ is intentionally NOT ignored — it is a committed build artifact.
 # See README.md "Committed dist/" section and project-docs/12 §5.4.
+# ...except tsc incremental build cache, which is machine-local noise.
+dist/tsconfig.tsbuildinfo
