@@ -231,3 +231,24 @@ pnpm typecheck   # tsc --noEmit
 pnpm test        # vitest run
 pnpm build       # compiles src/ -> dist/ (commit the result)
 ```
+
+## CI & local checks
+
+`.github/workflows/ci.yml` runs on every push/PR to `development` and
+`development-refactor`: `pnpm typecheck`, `pnpm test`, a `dist/` freshness check and
+`check-ownership`. No deploy step and no Cloudflare
+credentials are in CI — it is test-only.
+
+To run the same checks locally before every `git push` (OPS-mono-15), install
+the committed hook once:
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+This is opt-in — nothing installs it automatically. Uninstall with
+`git config --unset core.hooksPath`. Each repo's hook mirrors **its own** CI
+steps, which are not identical across the five — see `scripts/hooks/pre-push`
+for what this one runs. The `dist/` check matters most here: the four app
+repos install this package straight from git with no build step of their own,
+so a stale `dist/` ships broken code to all of them.

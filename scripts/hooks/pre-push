@@ -1,0 +1,41 @@
+#!/bin/sh
+# OPS-mono-15 — local pre-push hook running the same checks as
+# .github/workflows/ci.yml, so a broken push never reaches CI.
+#
+# worker-landing has had one since OPS-wl-03; the other four repos did not,
+# which meant the one repo with local verification was the one least likely
+# to need it. This file is that hook, mirroring THIS repo's CI steps in THIS
+# repo's order — they are not the same across the five, so do not copy one
+# repo's hook over another's.
+#
+# This repo matters most of the five, because the four app repos consume it
+# as a git dependency: a bad push here is not caught by anyone else's CI
+# until they bump their pin.
+#
+# This is a committed script, not an installed hook — installing it is a
+# one-time opt-in, not automatic (see README.md's "CI & local checks"
+# section for the one-line install command).
+
+set -e
+
+echo "[pre-push] typecheck"
+pnpm typecheck
+
+echo "[pre-push] test"
+pnpm test
+
+# dist/ is COMMITTED here (the app repos install this package straight from
+# git, with no build step of their own), so a stale dist/ ships broken code
+# to all four of them. CI fails on this; catching it locally is the whole
+# point of the hook.
+echo "[pre-push] build + dist/ freshness"
+pnpm build
+if ! git diff --exit-code -- dist; then
+  echo "[pre-push] dist/ is stale relative to src/. Commit the rebuilt dist/ before pushing." >&2
+  exit 1
+fi
+
+echo "[pre-push] check-ownership"
+node bin/check-ownership.mjs --check
+
+echo "[pre-push] all checks passed"
