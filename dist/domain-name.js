@@ -23,12 +23,12 @@
 // SYNTACTIC ONLY — no network call, no availability check. Staff verify real availability
 // at the registrar AFTER payment (OQ-15).
 const DOMAIN_SUFFIX = ".my.id";
-/** Shortest label Kodekraft will register. Real `.my.id` limits are UNVERIFIED (doc 17 FR-11.2) — conservative until a registrar confirms. */
+/** Shortest label KodeKraft will register. Real `.my.id` limits are UNVERIFIED (doc 17 FR-11.2) — conservative until a registrar confirms. */
 export const MIN_LABEL_LENGTH = 3;
 export const MAX_LABEL_LENGTH = 63;
 const MAX_RAW_INPUT_LENGTH = 255;
 const LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
-// Kodekraft-reserved labels (doc 17 FR-11.2). Starter list — NOT exhaustive; `DOC-wl-06`
+// KodeKraft-reserved labels (doc 17 FR-11.2). Starter list — NOT exhaustive; `DOC-wl-06`
 // tracks finalising it with Pram/staff before go-live.
 const RESERVED_LABELS = new Set([
     "www", "admin", "administrator", "kodekraft", "api", "mail", "email",
@@ -45,7 +45,7 @@ function invalid(reason) {
  * Lowercase/trim; strip scheme, `www.`, path/query/fragment and a trailing dot;
  * accept a bare `label` or `label.my.id`; reject any other suffix. Charset
  * `a-z0-9-`, no leading/trailing hyphen, no `--` at positions 3-4, length 3..63,
- * and reject Kodekraft-reserved labels. Pure and never throws.
+ * and reject KodeKraft-reserved labels. Pure and never throws.
  */
 export function normalizeDomainName(raw) {
     if (typeof raw !== "string")
