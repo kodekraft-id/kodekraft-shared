@@ -85,7 +85,16 @@ describe("QA-mono-15(b): runtime guard fails closed on an unparseable write targ
   });
 });
 
-describe("QA-mono-15(c): check-ownership.mjs tamper and exemption detection", () => {
+// Every test in this block spawns a real `node bin/check-ownership.mjs` against a
+// throwaway repo on disk, so each one pays a full Node cold start plus filesystem
+// work. Alone the whole block finishes in under 4s; run alongside the other 14 test
+// files it has been seen at 17s, which puts individual tests over vitest's 5s
+// default and fails them on TIMEOUT rather than on anything they assert. That is a
+// flake, and a flake in the package all four app repos depend on is worse than a
+// slow test: it teaches people to re-run CI instead of reading it. Raised here, for
+// this block only, rather than globally — the pure-function suites should stay on
+// the tight default.
+describe("QA-mono-15(c): check-ownership.mjs tamper and exemption detection", { timeout: 30_000 }, () => {
   let dir: string | undefined;
 
   afterEach(() => {

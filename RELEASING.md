@@ -198,6 +198,19 @@ no republish step, because there is no npm registry in this flow at all.
 
 ## 6. Version history
 
+**Tag status, re-verified 2026-09-23** by comparing `git tag -l` against
+`git ls-remote --tags origin`: **there is no local-only backlog — every tag below exists on
+the remote, and every remote tag now has an entry below.** Four versions have no tag of their
+own — `v0.2.0` (written up inside `v0.3.0`'s entry) and `v0.4.0`, `v0.8.0`, `v0.10.0` (each
+marked as such) — because their content shipped inside the next tagged release. A version
+bump without its own tag is normal here and is not a missing step; the thing that WOULD be a
+bug is a pin in an app repo pointing at a tag that does not exist, and all four repos
+currently pin `#v0.13.0`, which does.
+
+`v0.1.2` and `v0.3.0` were tagged and pushed but had no entry here at all until this pass —
+the history jumped straight from `v0.1.1` to `v0.4.0`. Both are reconstructed from git and
+marked as such.
+
 - **`v0.13.0`** (minor, LOCKSTEP) - `migrations.lock.json` gains `0026_event_label_rename.sql`, and
   `invitations.event_label` is granted to the same three writers `event_type` already had (worker-landing,
   worker-user, worker-admin). Bump rule applied: **minor**, per section 2's `migrations.lock.json` clause - a lock
@@ -233,7 +246,7 @@ no republish step, because there is no npm registry in this flow at all.
   untouched. **This tag contains `v0.10.0`'s lock entry as well, so tag `v0.11.0` ONLY** - `v0.10.0` was never
   tagged and does not need its own tag.
 
-- **`v0.10.0`** (minor, pending tag) - `migrations.lock.json` gains `0024_template_section_bg_keys.sql` (`BE-undangan-08`:
+- **`v0.10.0`** (minor, NO TAG OF ITS OWN — see the note under this heading) - `migrations.lock.json` gains `0024_template_section_bg_keys.sql` (`BE-undangan-08`:
   a per-section, per-template background-image manifest replacing the coarse `templates.supports_section_bg` boolean).
   Bump rule applied: **minor**, per §3's lockstep-DDL rule - a `migrations.lock.json` change is a minor bump
   regardless of whether anything else widened, because all 4 app repos must hold the new file byte-identically before
@@ -242,7 +255,7 @@ no republish step, because there is no npm registry in this flow at all.
   migration only), so no grant changed and no app gained a write. `src/` and the `exports` map are untouched - this
   release carries the lock entry and nothing else.
 
-- **`v0.9.1`** (patch, pending tag) — `bin/check-ownership.mjs` R4 precision fix (`OPS-shared-21` part b). Bump rule
+- **`v0.9.1`** (patch, tagged) — `bin/check-ownership.mjs` R4 precision fix (`OPS-shared-21` part b). Bump rule
   applied: **patch**, per §3's own explicit example ("a `check-ownership.mjs` rule getting a false-positive fix") —
   `ownership.json` and the `exports` map are byte-identical (`pnpm classify-release` reports no changes to either, nor
   to `migrations.lock.json`), confirming this is implementation-only. R4 previously couldn't resolve a receiver's
@@ -276,7 +289,7 @@ no republish step, because there is no npm registry in this flow at all.
   committed blob — this does NOT fix the 13 CRLF-checkout-artifact violations `[R7]` currently reports in each of the
   4 consuming repos (confirmed real: this message's own CRLF-normalization check matches for all 13 in each repo),
   which remain open and out of scope for this release; do not "fix" them by renormalizing working-tree files.
-- **`v0.9.0`** (minor, pending tag) - `migrations.lock.json` gains `0023_checkin_test_mode.sql` (doc 17 FR-22, ruling 40:
+- **`v0.9.0`** (minor, tagged) - `migrations.lock.json` gains `0023_checkin_test_mode.sql` (doc 17 FR-22, ruling 40:
   owner-side check-in test mode). Two purely additive columns on existing tables: `invitations.checkin_test_mode` and
   `guests.checked_in_is_test`, both `INTEGER NOT NULL DEFAULT 0 CHECK (col IN (0,1))` — same proven pattern as
   `is_demo` (0022). `ownership.json` also changes (this is what makes the release minor, not just the lock):
@@ -299,7 +312,7 @@ no republish step, because there is no npm registry in this flow at all.
   on a table it already writes; flagged for architecture-analyst/Pram in `ownership.json`'s `invitations`/`guests`
   notes rather than decided here. No `expires_at_locked` column was added (OQ-30 is explicitly out of scope for this
   release; Pram ruled `expires_at` stays system-managed only, no staff manual override).
-- **`v0.8.0`** (minor, pending tag) - `tier.ts` gains event-based expiry + a check-in pre-window, a direct product-rule change
+- **`v0.8.0`** (minor, NO TAG OF ITS OWN — see the note under this heading) - `tier.ts` gains event-based expiry + a check-in pre-window, a direct product-rule change
   from Pram (2026-09-20), additive on top of `v0.7.0`'s expiry section: `computeExpiresAtFromEvents(events, tier, opts?)` (basis =
   the LATEST effective end across `events`, where one event's effective end is `end_at` when present else 23:59:59.999 WIB on
   `start_at`'s WIB calendar day; falls back to `opts.activatedAt` when no event is usable, `null` when neither is; reuses
@@ -312,20 +325,20 @@ no republish step, because there is no npm registry in this flow at all.
   back to Pram rather than guessed: an event with an `end_at` but no `start_at` never opens the check-in window (conservative
   choice — there is no principled way to place the pre-buffer without a start time); see this function's own doc comment in
   `src/tier.ts` and the implementing session's handoff report.
-- **`v0.7.0`** (minor, pending tag) - `tier.ts` gains the expiry helpers (BE-mono-28, doc 17 section 16): `isInvitationExpired`,
+- **`v0.7.0`** (minor, tagged) - `tier.ts` gains the expiry helpers (BE-mono-28, doc 17 section 16): `isInvitationExpired`,
   `isInvitationLocked`, `getInvitationExpiryState`, `isDomainActive`, `parseTimestampMs`, `EXPIRY_GRACE_DAYS` (30). Demos (`is_demo === 1`)
   never expire; NULL `expires_at` = not expired; accepts UTC `Z`, `+07:00` offsets and zone-less SQLite datetimes (read as UTC). Pure
   widening (new exports on the existing `./tier` entry); no `ownership.json` or `migrations.lock.json` change.
 
-- **`v0.6.0`** (minor, pending tag) - `ownership.json` only. `events` gains `worker-admin` as a reader (eventAt countdown; pure widening,
+- **`v0.6.0`** (minor, tagged) - `ownership.json` only. `events` gains `worker-admin` as a reader (eventAt countdown; pure widening,
   only worker-admin needs to bump). `invitations.is_demo` (migration 0022) is documented in the table note: it is in no app's writer
   allowlist (ops SQL only) and readable by all four apps via existing table-level access. Minor per section 3 (any `ownership.json` change).
-- **`v0.5.0`** (minor, pending tag) - `migrations.lock.json` gains `0020_invitation_purchased_addons` (BE-wl-27),
+- **`v0.5.0`** (minor, tagged) - `migrations.lock.json` gains `0020_invitation_purchased_addons` (BE-wl-27),
   `0021_domain_lifecycle_and_refunds` (BE-wl-34) and `0022_invitation_is_demo` (BE-wl-41), all purely additive. Minor, following the
   0.3.0 precedent (doc 16 section 6): a lock change is a lockstep DDL obligation (section 2), so a repo that merges the mirrored files
   must pin this version in the same change. `ownership.json`, `src/` and `dist/` are unchanged. `0020` (not the earmarked slot for
   BE-wl-03) is used contiguously because sync-migrations forbids gaps below the locked maximum. `v0.4.0` is still untagged.
-- **`v0.4.0`** (minor, pending tag) — tier x add-on model (BE-mono-23/24/25/26). `tier.ts` gains the
+- **`v0.4.0`** (minor, NO TAG OF ITS OWN — see the note under this heading) — tier x add-on model (BE-mono-23/24/25/26). `tier.ts` gains the
   effective-capability API (`parsePurchasedAddons`, `getEffectiveCapabilities`, `maxUsefulGalleryUnits`,
   `PHOTO_CEILING`, optional trailing `addons` param on `hasFeature`/`getEffectivePhotoCap`). **VALUE CHANGE
   (called out per doc 17 FR-1):** `TIER_CAPABILITIES.*.qrCheckin`/`customDomain` are now `false` at every tier
@@ -337,6 +350,26 @@ no republish step, because there is no npm registry in this flow at all.
   `invitations.purchased_addons` (landing + admin write), `invitation_domains` (landing gets a column-scoped
   creation grant), new table `order_refunds` (admin write, landing read). No `migrations.lock.json` change: the
   migrations that create these columns/tables (BE-wl-27, BE-wl-34) will lock separately.
+- **`v0.3.0`** (minor, tagged) — **entry reconstructed from git 2026-09-23; this release and
+  `v0.1.2` were tagged and pushed but never written up here, which is why the history below
+  jumped from `v0.1.1` to `v0.4.0`.** Rolls up `v0.2.0` (`BE-mono-22`: widened worker-admin's
+  write grants — `clients`/`invitations` provisioning columns and `sections` — which is why
+  `v0.2.0` has no tag of its own) plus: `migrations.lock.json` gains `0014`–`0019`;
+  `bin/sync-migrations.mjs` and its tests (`OPS-shared-07`); `docs/SECRETS.md`, the per-Worker
+  secrets list derived from `wrangler.toml`/`bindings.ts` (`DOC-mono-02`, extended with
+  Turnstile / `CF_API_TOKEN` / `INTERNAL_KEY`); the README consumer guide (`DOC-shared-01`);
+  the enforcement-layer test suite (`QA-mono-15`); and `.gitattributes` (`eol=lf`, which is
+  what makes R7's migration hashing reproducible across Windows and Linux checkouts). Bump
+  rule: **minor** on both counts — an `ownership.json` widening and a `migrations.lock.json`
+  change, either one of which forces it under §3.
+
+- **`v0.1.2`** (patch, tagged) — **entry reconstructed from git 2026-09-23, see `v0.3.0`.**
+  A second `bin/check-ownership.mjs` R4 false-positive fix (`OPS-shared-21a`), the sibling of
+  `v0.1.1`'s: R4 was matching `.prepare()`/`.batch()`/`.exec()` inside **doc-comment prose**,
+  so a comment explaining the rule could trip the rule. Comment text is now ignored — the
+  behaviour the R4 row in the README's rule table states. Also adds this repo's `CLAUDE.md`.
+  Implementation-only (`ownership.json` and the `exports` map unchanged), hence patch per §3.
+
 - **`v0.1.1`** (patch) — `bin/check-ownership.mjs`'s R4 rule false-positive fix. The bare
   `.(?:prepare|batch|exec)\s*\(` method-name match fired on any receiver, not just a D1
   binding — found during `BE-undangan-07` (the first real consumer integration), where it

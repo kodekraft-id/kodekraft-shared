@@ -46,12 +46,13 @@ and are **not** part of this package's surface, on purpose:
   schema would put `admins`/`orders`/`clients` back within import reach of the public,
   unauthenticated worker-undangan Worker).
 
-## Status (v0.9.1, tag pending push)
+## Status (v0.13.0, tagged and pushed)
 
 Started as the `OPS-shared-01` scaffolding commit. Every module listed under "What this
-package is" above has a real implementation, with 417 tests as of `package.json`'s current
-`0.9.1` (see `RELEASING.md`'s "Version history" for what shipped in every release since
-`v0.1.0`, and which of the later ones are still local-only, not-yet-pushed tags):
+package is" above has a real implementation, with 502 tests as of `package.json`'s current
+`0.13.0`. All four app repos pin `#v0.13.0`. See `RELEASING.md`'s "Version history" for what
+shipped in every release since `v0.1.0`; every tag listed there now exists on the remote
+(`v0.10.0` deliberately has none — its lock entry shipped inside `v0.11.0`, see that entry):
 
 | Module | Status |
 |---|---|
@@ -64,12 +65,17 @@ package is" above has a real implementation, with 417 tests as of `package.json`
 | `OWNERSHIP.md` | **real, generated render (`OPS-mono-14`, landed)** — run `node bin/check-ownership.mjs --fix` to regenerate after any `ownership.json` change |
 | `migrations.lock.json` | **real, landed** — R7 is fully enforced against consumers now, no more `R7 SKIPPED` warning. |
 | `bin/sync-migrations.mjs` | **real (`OPS-shared-07`, landed)** — see "Adding a migration" below. |
+| `src/domain-name.ts` | **real (`BE-mono-32`, landed in `v0.12.0`)** — the ONE canonical custom-domain validator (`normalizeDomainName`), exported as `@kodekraft/shared/domain-name`. It exists because worker-landing's checkout and worker-user's dashboard had drifted apart on what a valid `.my.id` name is. |
 | `scripts/classify-release.mjs` | **real (`OPS-shared-20`, landed)** — see `RELEASING.md` §4. |
 
 The package shell, exports map, build pipeline, and CI are real and passing end-to-end.
-`v0.1.0` was the first tag — see `RELEASING.md`'s version history for every release since,
-including which ones are committed/version-bumped locally but **not yet tagged and pushed**
-(that step is always Pram's own manual action, per this project's standing rule).
+`v0.1.0` was the first tag — see `RELEASING.md`'s version history for every release since.
+As of 2026-09-23 there is no local-only backlog: every tag in that history is on the remote,
+verified by comparing `git tag -l` against `git ls-remote --tags origin`.
+
+**Watch the lockstep rule when bumping.** A change to `migrations.lock.json` is a MINOR bump,
+and the four app repos' pins move with it — `v0.11.0` and `v0.13.0` are both that kind of
+release. `RELEASING.md` §3 has the full bump rules.
 
 ## Consuming this package
 
@@ -77,7 +83,7 @@ This is a **git-protocol dependency**, never published to npm (`"private": true`
 `package.json` is deliberate — it blocks an accidental `npm publish`).
 
 ```bash
-pnpm add github:kodekraft-id/kodekraft-shared#v0.9.1
+pnpm add github:kodekraft-id/kodekraft-shared#v0.13.0
 ```
 
 This writes an immutable-by-lockfile pin: the tag is the human-readable pointer, and
@@ -111,7 +117,7 @@ and each repo exposes the CLI as a script:
 ```json
 {
   "scripts": { "check:ownership": "kodekraft-check-ownership" },
-  "dependencies": { "@kodekraft/shared": "github:kodekraft-id/kodekraft-shared#v0.9.1" },
+  "dependencies": { "@kodekraft/shared": "github:kodekraft-id/kodekraft-shared#v0.13.0" },
   "kodekraft": {
     "app": "worker-user",
     "dbCompositionRoot": "src/worker/db/client.ts",
