@@ -191,11 +191,72 @@ Two caveats worth knowing before you trust the numbers:
 no Resend/Fonnte credentials, so no email or WhatsApp is sent to anyone. Until that is wired,
 treat the Workers log (or a log-drain alert on that event name) as the alerting channel.
 
+## Seeded demo accounts (NOT Worker secrets - database rows)
+
+Everything else in this document is a Worker secret. This section is about **login
+passwords stored as rows in D1**, which is a different kind of exposure and is not
+covered by `wrangler secret list`.
+
+`seed.sql` (identical in worker-admin, worker-user and worker-undangan) creates five demo
+accounts and **writes their shared password in plaintext in the file**, which is committed.
+The same password also appears in `invitation-worker-admin/README.md`,
+`invitation-worker-user/README.md`, `invitation-worker-landing/project-docs/13-project-structure-and-local-setup.md`
+and about eight test files. On a local D1 that is correct and intentional - a seed nobody
+can log into is useless. On a deployed database it means **anyone with repo access is an
+administrator**.
+
+**Verified 2026-09-23 against the pre-`0026` production dump:** five of the six accounts on
+the production D1 carried a `password_hash` **byte-identical** to one in `seed.sql`. PBKDF2
+salts are random per hash, so matching salt AND digest is the seed row itself, not chance.
+
+| Account | Table | What it can do | Priority |
+|---|---|---|---|
+| `superadmin@kodekraft.id` | `admins` | Full admin panel | **Rotate first** |
+| `ops@kodekraft.id` | `admins` | Full admin panel (same hash as above - same password) | **Rotate first** |
+| `admin@kodekraft.id` | `clients` | Owns **all five demo invitations the storefront links to** | **Rotate first** |
+| `bali@kodekraft.id` | `clients` | Owns nothing live | Rotate or delete |
+| `jaya@kodekraft.id` | `clients` | Owns nothing live | Rotate or delete |
+
+The third row is the one that is easy to underrate: it is not an admin, but it owns
+`metatah-anggun` and the four `preview-*` invitations. Someone logging in as it can edit
+the demos every prospective customer clicks from `kodekraft.id`.
+
+**Do not delete those three demo invitations' owner** - the storefront gallery links to them
+and they would 404. Rotate the password instead.
+
+### Rotating one
+
+Generate a hash (password read from stdin, so it never enters shell history):
+
+```bash
+node -e 'const c=require("crypto");let d="";process.stdin.on("data",x=>d+=x).on("end",()=>{const pw=d.replace(/?
+$/,"");const s=c.randomBytes(16);const h=c.pbkdf2Sync(pw,s,100000,32,"sha256");console.log("pbkdf2$100000$"+s.toString("base64")+"$"+h.toString("base64"))})'
+```
+
+Then, per account (`admins` or `clients`):
+
+```bash
+npx wrangler d1 execute undangan-db --remote --command   "UPDATE admins SET password_hash = '<hash>', token_version = token_version + 1 WHERE email = '<email>'"
+```
+
+`token_version + 1` revokes every session already issued for that account. That is the point:
+the old password was public, so you cannot know who is already holding a token.
+
+Afterwards, confirm no production row still matches a seeded hash - compare the first 26
+characters of each `password_hash` against the ones in `seed.sql`. Matching prefixes mean the
+salt is shared, which only happens when the row came from the seed.
+
+### Why not just delete the demo accounts
+
+The two admins can be deleted once a real admin exists. The three clients cannot: one of them
+owns the five invitations the storefront gallery links to. Rotate those.
+
 ## After every fresh deploy
 
 Run in each Worker's repo unless noted.
 
 - [ ] `wrangler secret list` shows every required secret above for that Worker (names only).
+- [ ] No production row still carries a `seed.sql` password hash (see "Seeded demo accounts").
 - [ ] worker-landing: `MIDTRANS_SERVER_KEY` set and its type matches `MIDTRANS_IS_PRODUCTION`.
 - [ ] `INTERNAL_KEY` set on both worker-landing and worker-admin, same value.
 - [ ] `JWT_SECRET` / `REFRESH_TOKEN_SECRET` set on user and admin, all four values different.
