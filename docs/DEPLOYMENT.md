@@ -58,16 +58,22 @@ but **not yet applied to remote D1 and not yet deployed anywhere**:
 
 | What | State |
 |---|---|
-| Migrations `0013`–`0023` (idempotency key, tier/duration, soft-delete/audit columns, testimonials, custom domains, photo-cap override, activation observability, purchased add-ons, domain lifecycle + refunds, `is_demo`, check-in test mode) | **Authored and locked locally only.** `invitation-worker-landing/project-docs/16-migration-rollout-plan.md` says so explicitly for every one of these files ("AUTHORED AND LOCKED LOCALLY. NOTHING HAS BEEN APPLIED TO THE REMOTE D1"). The last *confirmed-applied* remote baseline is `0001`–`0012` (`OPS-shared-05`'s empirical cross-repo verification). Do not assume anything past `0012` is live without checking `wrangler d1 migrations list undangan-db --remote` yourself first. |
-| `kodekraft-shared` itself | `package.json` says `0.9.1`; **`v0.9.1` (and several versions before it, back through roughly `v0.4.0`) are committed/version-bumped locally but not yet tagged and pushed** — see `RELEASING.md`'s version history for exactly which tags exist on the remote today. A consumer cannot `pnpm add`/`pnpm install` a tag that hasn't been pushed. |
-| The 4 apps' `@kodekraft/shared` pin | Each repo's own `package.json` — check it directly; they are **not** all on the same tag (each bumps independently per §7's widening/narrowing rules). |
-| The ownership guard's mode per repo | **Not uniform — read §6 before deploying.** worker-user and worker-undangan wire `getDb(..., { mode: "warn" })` explicitly. worker-landing's `src/db.ts` calls `getDb(env.DB, "worker-landing")` with **no mode argument**, which defaults to `"throw"` — confirmed directly in that file's own code and header comment as of this writing. This looks like an unflagged divergence from the warn-first rollout the other repos followed (see §6) rather than a deliberate, documented decision — confirm with Pram before deploying worker-landing. |
+| Migrations `0013`–`0026` (idempotency key, tier/duration, soft-delete/audit columns, testimonials, custom domains, photo-cap override, activation observability, purchased add-ons, domain lifecycle + refunds, `is_demo`, check-in test mode, template section-bg keys `0024`/`0025`, **event taxonomy `0026`**) | **Authored and locked locally only.** `invitation-worker-landing/project-docs/16-migration-rollout-plan.md` says so explicitly for every one of these files ("AUTHORED AND LOCKED LOCALLY. NOTHING HAS BEEN APPLIED TO THE REMOTE D1"). The last *confirmed-applied* remote baseline is `0001`–`0012` (`OPS-shared-05`'s empirical cross-repo verification). Do not assume anything past `0012` is live without checking `wrangler d1 migrations list undangan-db --remote` yourself first. |
+| `kodekraft-shared` itself | `package.json` says **`0.13.0`**, and **every tag in `RELEASING.md`'s version history is on the remote** — re-verified 2026-09-23 by comparing `git tag -l` against `git ls-remote --tags origin`. The "several versions not yet tagged and pushed" warning that stood here was true when written and is no longer. Three versions deliberately have no tag of their own (`v0.4.0`, `v0.8.0`, `v0.10.0`); their content shipped inside the next release, and `RELEASING.md` §6 marks each. |
+| The 4 apps' `@kodekraft/shared` pin | **All four are on `#v0.13.0`** (re-verified 2026-09-23). They are not independent any more and must not be allowed to drift: `v0.13.0` is a lockstep release (it changes `migrations.lock.json`), and §7's rule is that a lock change moves all four pins together. If they ever disagree, the odd repo's `check:ownership` is validating against a different grant matrix than the rest. **Check the pin AND the installed copy** — on 2026-09-22 all four were pinned to `v0.13.0` while still holding 0.11.0/0.12.0 on disk, so re-run `pnpm install` after any pin change. |
+| The ownership guard's mode per repo | **Not uniform — read §6 before deploying.** worker-user and worker-undangan wire `getDb(..., { mode: "warn" })` explicitly. worker-landing's `src/db.ts` calls `getDb(env.DB, "worker-landing")` with **no mode argument**, which defaults to `"throw"` — confirmed directly in that file's own code and header comment as of this writing. **Resolved since this was written:** that is the rollout state, not an accident — worker-landing is the one repo already flipped to `throw`, and worker-user, worker-admin and worker-undangan are still in their log-only soak. `QA-shared-16` tracks the per-repo flip and the transition is tested in all four (`warn` logs `db.ownership.violation` and the statement still executes; `throw` refuses the identical write at `prepare()`; the default is `throw`, so `warn` is always an explicit opt-in). |
 
-Because of this, "deploying a release" today means: apply `0013`–`0023` to remote D1 (§3),
+Because of this, "deploying a release" today means: apply `0013`–`0026` to remote D1 (§3),
 then deploy the 4 apps' pending code in the order in §4 — not "everything is already live,
 just redeploy."
 
 ## 3. Step A — apply pending migrations to the shared D1
+
+> **Range check, 2026-09-23.** This section and §2/§4/§8 said `0013`–`0023` until today; the
+> lineage now runs to **`0026`**. Applying the old range would leave `0024`/`0025` (template
+> section-bg keys) and `0026` (event taxonomy) unapplied — and `0026` is the one that breaks
+> checkout, see the worker-landing precondition in §4. Always confirm the real range against
+> `invitation-worker-landing/migrations/` rather than trusting a number written in prose.
 
 **Do this before deploying any Worker whose code reads/writes a column from these
 migrations.** Full command list, per-migration rollback SQL, and the "what each migration
@@ -76,7 +82,7 @@ unlocks" table are in `invitation-worker-landing/project-docs/16-migration-rollo
 
 1. **Tag and push `kodekraft-shared` first** so its `migrations.lock.json` (which already
    has all 23 entries locked locally) is resolvable by the 4 apps once they bump their pin —
-   see §7. A repo that merges the mirrored `0013`–`0023` files into its own `migrations/`
+   see §7. A repo that merges the mirrored `0013`–`0026` files into its own `migrations/`
    folder before bumping its `@kodekraft/shared` pin will fail `check:ownership`'s R7 rule
    ("unexpected file — not present in migrations.lock.json").
 2. **Back up remote D1** (run from `invitation-worker-landing/`, any sibling works since the
@@ -96,7 +102,7 @@ unlocks" table are in `invitation-worker-landing/project-docs/16-migration-rollo
 5. **Run the one-off backfill scripts that depend on this batch, in this order, only after
    the deploy sequence in §4 reaches the point their own preconditions name:**
    `scripts/backfill-package-tier.mjs` (needs `0014`; dry-run first, then `--apply`;
-   worker-landing) and `scripts/backfill-expires-at.mjs` (needs `0014`–`0023` applied **and**
+   worker-landing) and `scripts/backfill-expires-at.mjs` (needs `0014`–`0026` applied **and**
    worker-user already deployed with the event-basis recompute — see doc 16 §11 for why the
    ordering matters and its own known-demo safety check). Neither is a migration; both are
    idempotent, dry-run-by-default, human-run scripts — never run automatically by a deploy.
@@ -116,7 +122,7 @@ change to this order is made deliberately rather than by habit:
 
 | Order | Repo | Why it goes here |
 |---|---|---|
-| 1 | **worker-user** | Its `schema.ts` mirrors the `0014`–`0023` columns (`package_tier`, `activated_at`, `expires_at`, `photo_cap_override`, `purchased_addons`, `is_demo`, `checkin_test_mode`, …). Every invitation-scoped request selects these columns explicitly, so deploying worker-user against a D1 that doesn't have them yet fails with "no such column" — confirmed by the migration-rollout plan and the progress tracker alike. **This is why §3 must fully complete first.** worker-user is also the *only* app that writes `activated_at`/`expires_at`/the event-based expiry recompute at runtime — deploying it first means every other app immediately sees correct values instead of stale/NULL ones. |
+| 1 | **worker-user** | Its `schema.ts` mirrors the `0014`–`0026` columns (`package_tier`, `activated_at`, `expires_at`, `photo_cap_override`, `purchased_addons`, `is_demo`, `checkin_test_mode`, `event_label`, …). Every invitation-scoped request selects these columns explicitly, so deploying worker-user against a D1 that doesn't have them yet fails with "no such column" — confirmed by the migration-rollout plan and the progress tracker alike. **This is why §3 must fully complete first.** worker-user is also the *only* app that writes `activated_at`/`expires_at`/the event-based expiry recompute at runtime — deploying it first means every other app immediately sees correct values instead of stale/NULL ones. |
 | 2 | **worker-undangan** | worker-undangan's Cache API layer keys its cached guest-facing HTML on `invitations.updated_at`. worker-user bumps that column on every public-page content edit. Deploying worker-user *before* (or together with) worker-undangan means a guest never sees stale content for up to the cache's 24h lifetime — deploying in the other order risks exactly that window. (worker-undangan also needs Turnstile configured before it can accept real guest submissions at all — see §5 — independent of this ordering.) |
 | 3 | **worker-landing** | Storefront/checkout. Provisions new `clients`/`invitations`/`sections` rows that worker-user's dashboard and worker-undangan's renderer both immediately need to serve correctly (tier, purchased add-ons, demo flag) — deploying it after those two are already live and schema-complete means a brand-new purchase is servable end-to-end the moment checkout succeeds, with no gap where the buyer's new invitation exists but the app that's supposed to show it doesn't yet understand its columns. Landing's own "Lihat Demo" links point at worker-undangan, so worker-undangan should already be serving correctly before landing sends real traffic there. |
 | 4 | **worker-admin** | Two hard dependencies on worker-landing already being live: (a) worker-admin calls worker-landing over a Cloudflare **service binding** (`LANDING`) for order reprovision/resend-activation — the binding only resolves once `worker-landing` is deployed under that exact Worker name; (b) `INTERNAL_KEY` must be set to the **same value** in both repos (§5) for those calls to authenticate at all. Deploying admin last also means its add-on grant/revoke UI (see the callout below) is shipped against a storefront that has already finished writing the columns (`purchased_addons`, etc.) that UI reads and writes. |
@@ -133,6 +139,12 @@ Per-repo preconditions checklist (in addition to the ordering above):
       **every** real guest RSVP/wish/gift submission is rejected (fail-closed by design, not
       a bug to work around).
 - [ ] **Before worker-landing:** `MIDTRANS_SERVER_KEY` and `INTERNAL_KEY` set (§5).
+      **AND `0026` applied — this one is on the money path.** worker-landing's provisioning
+      INSERT names `invitations.event_label` by column, so deploying it against a D1 without
+      `0026` makes **every paid order's provisioning batch fail**: the buyer is charged and
+      gets nothing. Every other `invitations` query in that repo is a named-column
+      projection, so the INSERT is the whole exposure — but it is enough on its own.
+      (`invitation-worker-landing/project-docs/16-migration-rollout-plan.md` §12.)
 - [ ] **Before worker-admin:** worker-landing already deployed (service-binding resolution);
       `INTERNAL_KEY` byte-identical to worker-landing's value; `CF_API_TOKEN` set if custom
       domains are in active use; the add-on UI/backend pairing above checked.
@@ -221,7 +233,7 @@ this package's own `RELEASING.md`. Summary relevant to a deploy:
   Worker that predates a column the *current* schema requires can still run fine (migrations
   are additive; old code just ignores new columns), but a Worker rolled back to before a
   column it *used to* rely on was dropped will break.
-- **Migrations**: the default rollback for every migration in `0013`–`0023` is "leave it in
+- **Migrations**: the default rollback for every migration in `0013`–`0026` is "leave it in
   place" — every one of them is purely additive (new nullable/defaulted columns or new
   tables), so an unused column/table is harmless even if the code that would populate it is
   rolled back. A true rollback (accepting data loss in the new columns/tables) is documented
