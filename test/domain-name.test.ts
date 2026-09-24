@@ -61,6 +61,34 @@ describe("normalizeDomainName", () => {
     expect(bad("admin.my.id")).toMatch(/tidak dapat digunakan/);
   });
 
+  // DOC-wl-06, finalised 2026-09-24. The loop above proves whatever is in the list
+  // is enforced; it cannot notice something being REMOVED from the list. These are
+  // the labels whose absence would actually cost something, named one by one so a
+  // future edit has to be deliberate about dropping one.
+  //
+  // The payment and credential words carry the most weight. A `.my.id` name under
+  // this product's own brand is a far more credible phishing page than a random
+  // domain would be — `checkout.my.id` asking a wedding guest for a transfer is the
+  // scenario, and the guest has no way to tell it is not us.
+  it("keeps the labels that actually matter, one by one", () => {
+    const mustBeReserved = [
+      // impersonating the vendor
+      "kodekraft", "undangan", "invitation", "www", "admin", "api", "mail",
+      // the phishing vocabulary
+      "billing", "invoice", "pay", "payment", "checkout", "secure", "login", "account",
+      // short labels: also blocked by MIN_LABEL_LENGTH today, on purpose — that
+      // constant is documented as UNVERIFIED and may drop to 2.
+      "wa", "my", "id",
+    ];
+    for (const label of mustBeReserved) {
+      expect(RESERVED_LABEL_LIST, `${label} must stay reserved`).toContain(label);
+    }
+  });
+
+  it("reserves no label twice", () => {
+    expect(new Set(RESERVED_LABEL_LIST).size).toBe(RESERVED_LABEL_LIST.length);
+  });
+
   it("enforces charset and hyphen placement", () => {
     expect(bad("budi_sari")).toMatch(/huruf kecil/);
     expect(bad("-budi")).toMatch(/huruf kecil/);

@@ -205,11 +205,39 @@ own — `v0.2.0` (written up inside `v0.3.0`'s entry) and `v0.4.0`, `v0.8.0`, `v
 marked as such) — because their content shipped inside the next tagged release. A version
 bump without its own tag is normal here and is not a missing step; the thing that WOULD be a
 bug is a pin in an app repo pointing at a tag that does not exist, and all four repos
-currently pin `#v0.14.0`, which does.
+currently pin `#v0.14.1`, which does.
 
 `v0.1.2` and `v0.3.0` were tagged and pushed but had no entry here at all until this pass —
 the history jumped straight from `v0.1.1` to `v0.4.0`. Both are reconstructed from git and
 marked as such.
+
+- **`v0.14.1`** (patch) - `DOC-wl-06`: the reserved `.my.id` label list in `src/domain-name.ts` grows from 30
+  entries to 62, finalised with Pram. Bump rule applied: **patch**, per section 3 - `ownership.json`, the `exports`
+  map and `migrations.lock.json` are all byte-identical to `v0.14.0`; this is implementation only.
+
+  The additions are not about squatting on nice names. They are about a customer registering something a person
+  could reasonably mistake for KodeKraft's own infrastructure, or for a page where money changes hands. The
+  payment and credential words carry the most weight - `billing`, `invoice`, `pay`, `payment`, `checkout`,
+  `secure`, `login`, `signin`, `account` - because a `.my.id` name under this product's own brand is a far more
+  credible phishing page than a random domain would be. `checkout.my.id` asking a wedding guest for a transfer
+  is the scenario, and the guest has no way to tell it is not us. Also added: the product's own words in both
+  languages (`undangan`, `invitation`), more infrastructure and mail labels, and the two-letter labels `wa`,
+  `my`, `id`.
+
+  **Those two-letter labels are redundant today and that is deliberate.** `MIN_LABEL_LENGTH` is 3, so they are
+  already refused - but that constant's own comment records that the real `.my.id` limits are UNVERIFIED and it
+  is conservative until a registrar confirms. If it drops to 2, this list should not have to be revisited to
+  stay correct.
+
+  **Adoption is partial, and that is per section 2 rather than an oversight.** Only worker-landing (checkout)
+  and worker-user (dashboard) import `domain-name`; worker-admin and worker-undangan have nothing to react to.
+  All four pins were moved anyway, to keep "all four on the same tag" a true statement that `DEPLOYMENT.md`'s
+  check can rely on - but only landing and user carry a behaviour change and need a redeploy for it.
+
+  **The list is append-only from here.** Adding a label is safe; removing one hands out a name that was
+  previously refused, possibly to someone who asked for it and was told no. The existing test loop proves
+  whatever is in the list is enforced but cannot notice a REMOVAL, so a second test now names the
+  load-bearing labels one by one. shared 504 tests.
 
 - **`v0.14.0`** (minor, LOCKSTEP) - `migrations.lock.json` gains TWO migrations, both integrity guards that
   add no column and therefore need no grant: `ownership.json` and the `exports` map are byte-identical to
