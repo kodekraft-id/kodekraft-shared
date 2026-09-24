@@ -205,11 +205,42 @@ own — `v0.2.0` (written up inside `v0.3.0`'s entry) and `v0.4.0`, `v0.8.0`, `v
 marked as such) — because their content shipped inside the next tagged release. A version
 bump without its own tag is normal here and is not a missing step; the thing that WOULD be a
 bug is a pin in an app repo pointing at a tag that does not exist, and all four repos
-currently pin `#v0.13.0`, which does.
+currently pin `#v0.14.0`, which does.
 
 `v0.1.2` and `v0.3.0` were tagged and pushed but had no entry here at all until this pass —
 the history jumped straight from `v0.1.1` to `v0.4.0`. Both are reconstructed from git and
 marked as such.
+
+- **`v0.14.0`** (minor, LOCKSTEP) - `migrations.lock.json` gains TWO migrations, both integrity guards that
+  add no column and therefore need no grant: `ownership.json` and the `exports` map are byte-identical to
+  `v0.13.0`. Bump rule applied: **minor**, on the `migrations.lock.json` clause alone, so all 4 app pins move.
+
+  `0027_client_email_collation.sql` (`BE-wl-03`) - a unique index on `clients(email COLLATE NOCASE)`, so
+  `Budi@x.com` and `budi@x.com` can no longer both exist. `0028_enum_guards.sql` (`BE-wl-07`) - twelve
+  `BEFORE INSERT`/`BEFORE UPDATE` triggers pinning the six TEXT enum columns (`invitations.status`,
+  `orders.status`, `rsvp.status`, `gifts.type`, `gifts.status`, `gift_accounts.type`) to the value sets their
+  `z.enum` schemas already enforce at the HTTP edge.
+
+  **Neither task was implemented in the shape its entry asked for, for one shared reason worth recording
+  here rather than only in the landing backlog.** Both entries prescribed SQLite's "create new table / copy /
+  drop old / rename" rebuild - `BE-wl-03` to get `UNIQUE COLLATE NOCASE` on the column, `BE-wl-07` because a
+  `CHECK` cannot be added to an existing column any other way. **That pattern destroys data on D1, silently.**
+  Measured in workerd, not inferred from documentation
+  (`invitation-worker-landing/test/client-email-collation.test.ts`, second describe block):
+  `PRAGMA foreign_keys` is permanently `1`; `PRAGMA foreign_keys = OFF` is accepted without error and has no
+  effect; `defer_foreign_keys` does not help either, including inside `batch()`. So `DROP TABLE clients` runs
+  the implicit DELETE, fires `ON DELETE CASCADE` into `invitations` and onward into every child of that, and
+  **raises nothing** - the runbook reads as a success while the database empties. A unique index and a trigger
+  give the same enforcement, add no risk, and roll back in one statement.
+
+  **Consequence for any future task in this system: a table with cascading children cannot be rebuilt on D1.**
+  That rules out, for these tables, not just `CHECK` but anything else needing a rebuild - changing a column
+  type, adding `NOT NULL`, reordering a primary key.
+
+  Both migrations are `IF NOT EXISTS` and purely additive; rollback is `DROP INDEX` / `DROP TRIGGER`. No app
+  `schema.ts` mirror changes, so unlike `v0.13.0`'s `event_label` there is no deploy-ordering hazard: code and
+  migration can land in either order. All four suites pass with both applied - landing 385, user 713,
+  undangan 259, admin 546.
 
 - **`v0.13.0`** (minor, LOCKSTEP) - `migrations.lock.json` gains `0026_event_label_rename.sql`, and
   `invitations.event_label` is granted to the same three writers `event_type` already had (worker-landing,

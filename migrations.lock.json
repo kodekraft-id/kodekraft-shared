@@ -24,5 +24,7 @@
   "0023_checkin_test_mode.sql": "95350c4ea98c4d406957ba977d7c4985e0729309284e58199afaf07d93d581c4",
   "0024_template_section_bg_keys.sql": "0739258fc49e7dff1ac4ee6589a1d6023a5d876764d9abe1bb9b5dc9e823f041",
   "0025_template_section_bg_all.sql": "de937aa4cac639783b6cfd6f1b2e1f5f43f8855fcd6c3c2b5dd26f29fd601cb5",
-  "0026_event_label_rename.sql": "2269e0c3c8f5e95a82b53c941c37e490b63c3f1554ee3998f87da763fe455cbe"
+  "0026_event_label_rename.sql": "2269e0c3c8f5e95a82b53c941c37e490b63c3f1554ee3998f87da763fe455cbe",
+  "0027_client_email_collation.sql": "947e19818a6f54863eca691ed9c8c72fc0addaef0ac69e69b22b482a8875c794",
+  "0028_enum_guards.sql": "b5a593d632444e04df68aac289830f350b8b1c0c49ca1526e76e2b8ed8a8d35b"
 }
