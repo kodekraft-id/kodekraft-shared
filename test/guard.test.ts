@@ -149,12 +149,30 @@ describe("getDb", () => {
     );
   });
 
-  it("throws when worker-user writes clients.activation_token_hash, a worker-landing-only column", () => {
+  // INVERTED 2026-09-24 by BE-mono-33, and the inversion is the point of the entry.
+  // This used to assert that worker-user could NOT write activation_token_hash. It
+  // could not — and it was doing it anyway, on every activation, because that Worker
+  // runs the guard in `warn` mode, which logs the violation and runs the statement.
+  // Clearing the token IS the replay defence; without the grant, activation cannot
+  // consume its own token. The code was right and the matrix was incomplete.
+  it("lets worker-user CLEAR the activation columns — that clear is the replay defence", () => {
     const { db } = createFakeD1();
     const guarded = getDb(db, "worker-user");
 
     expect(() =>
       guarded.prepare(`update "clients" set "activation_token_hash" = ?, "updated_at" = ? where "id" = ?`),
+    ).not.toThrow();
+  });
+
+  it("still refuses worker-user on a clients column it genuinely does not own", () => {
+    // The pairing matters: a widening is only safe if the guard still bites
+    // somewhere on the same table. `deleted_at` is worker-admin's — account deletion
+    // is ops-initiated, never self-service.
+    const { db } = createFakeD1();
+    const guarded = getDb(db, "worker-user");
+
+    expect(() =>
+      guarded.prepare(`update "clients" set "deleted_at" = ? where "id" = ?`),
     ).toThrow(OwnershipViolationError);
   });
 

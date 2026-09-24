@@ -205,11 +205,40 @@ own — `v0.2.0` (written up inside `v0.3.0`'s entry) and `v0.4.0`, `v0.8.0`, `v
 marked as such) — because their content shipped inside the next tagged release. A version
 bump without its own tag is normal here and is not a missing step; the thing that WOULD be a
 bug is a pin in an app repo pointing at a tag that does not exist, and all four repos
-currently pin `#v0.14.1`, which does.
+currently pin `#v0.15.0`, which does.
 
 `v0.1.2` and `v0.3.0` were tagged and pushed but had no entry here at all until this pass —
 the history jumped straight from `v0.1.1` to `v0.4.0`. Both are reconstructed from git and
 marked as such.
+
+- **`v0.15.0`** (minor, WIDENING) - `BE-mono-33`: worker-user gains seven columns it had been writing all
+  along. `invitations` +`id`/`client_id`/`template_id`/`slug`/`created_at`; `clients`
+  +`activation_token_hash`/`activation_expires_at`. Bump rule applied: **minor**, per section 3 - `ownership.json`
+  changed. Per section 2 this is a **widening**, so strictly only worker-user had to bump; all four pins moved
+  anyway to keep "all four on the same tag" a statement `DEPLOYMENT.md` can check.
+
+  **How a gap this size stayed invisible is the part worth reading.** worker-user has always created invitations
+  and has always cleared its own activation token, and the matrix granted neither. Nothing broke, because
+  worker-user runs the guard in `mode: "warn"` - which **logs the violation and runs the statement anyway**. So
+  "all tests pass" and "this repo obeys the matrix" were different sentences, and nobody had checked which was
+  true. `QA-shared-16` forced `throw` across every warn-mode repo and worker-user failed **30 tests in 13 files**.
+  worker-admin, run the same way, was clean.
+
+  A creator that may not write `id` cannot create; clearing the activation token IS the replay defence that
+  `security/activation-replay.test.ts` covers. The code was right and this file was incomplete.
+
+  **THE LIMIT OF THE CLIENTS GRANT, recorded because a reader finding it here should not conclude the column is
+  unprotected.** `ownership.json` is column-scoped, not value-scoped: it can say "may write this column", never
+  "may only write NULL to it". A write of a REAL token hash from worker-user would be an account-takeover
+  primitive - mint a token against someone else's account and you own it - which is why worker-landing's own
+  repository calls the column creator-only. **That value scope is enforced in the consuming repo instead**, two
+  ways: `ClientPatch` types both fields as `null`, so a real hash does not compile, and
+  `invitation-worker-user/scripts/check-activation-writes.mjs` (`pnpm check:activation`) is the backstop for raw
+  SQL, which `tsc` cannot see. Same pattern as landing's `check-password-hash-writes.mjs`.
+
+  Two of this package's own tests **asserted the old rule** and were inverted rather than deleted, with the
+  reasoning in place; each gained a paired negative case, because a widening is only safe if the guard still
+  bites somewhere on the same table (`clients.deleted_at` stays worker-admin's). shared 506 tests.
 
 - **`v0.14.1`** (patch) - `DOC-wl-06`: the reserved `.my.id` label list in `src/domain-name.ts` grows from 30
   entries to 62, finalised with Pram. Bump rule applied: **patch**, per section 3 - `ownership.json`, the `exports`

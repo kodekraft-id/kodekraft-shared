@@ -23,11 +23,30 @@ describe("writersOf", () => {
 });
 
 describe("writableColumns", () => {
-  it("does NOT include activation_token_hash in worker-user's clients allowlist", () => {
+  // INVERTED 2026-09-24 by BE-mono-33. worker-user CLEARS both columns on
+  // activation, which is the replay defence; the matrix had never granted them and
+  // the violation was being logged and ignored in `warn` mode.
+  //
+  // **The grant is wider than the need and cannot be narrowed here.** ownership.json
+  // is column-scoped: it can say "may write this column", never "may only write
+  // NULL". Writing a REAL hash from worker-user would be an account-takeover
+  // primitive. That value scope is enforced in the consuming repo instead —
+  // `ClientPatch` types both fields as `null` (so a real hash does not compile) and
+  // `invitation-worker-user/scripts/check-activation-writes.mjs` is the backstop for
+  // raw SQL. This test records that division of responsibility, because a reader
+  // finding the grant here should not conclude the column is unprotected.
+  it("includes the activation columns in worker-user's clients allowlist", () => {
     const columns = writableColumns("clients", "worker-user");
     expect(columns).not.toBe("*");
-    expect(columns).not.toContain("activation_token_hash");
-    expect(columns).not.toContain("activation_expires_at");
+    expect(columns).toContain("activation_token_hash");
+    expect(columns).toContain("activation_expires_at");
+  });
+
+  it("gives worker-user the invitation CREATION columns — a creator that cannot write `id` cannot create", () => {
+    const columns = writableColumns("invitations", "worker-user");
+    for (const c of ["id", "client_id", "template_id", "slug", "created_at"]) {
+      expect(columns, c).toContain(c);
+    }
   });
 
   it("does include activation_token_hash in worker-landing's clients allowlist", () => {
