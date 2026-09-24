@@ -58,33 +58,46 @@ but **not yet applied to remote D1 and not yet deployed anywhere**:
 
 | What | State |
 |---|---|
-| Migrations `0013`–`0026` (idempotency key, tier/duration, soft-delete/audit columns, testimonials, custom domains, photo-cap override, activation observability, purchased add-ons, domain lifecycle + refunds, `is_demo`, check-in test mode, template section-bg keys `0024`/`0025`, **event taxonomy `0026`**) | **Authored and locked locally only.** `invitation-worker-landing/project-docs/16-migration-rollout-plan.md` says so explicitly for every one of these files ("AUTHORED AND LOCKED LOCALLY. NOTHING HAS BEEN APPLIED TO THE REMOTE D1"). The last *confirmed-applied* remote baseline is `0001`–`0012` (`OPS-shared-05`'s empirical cross-repo verification). Do not assume anything past `0012` is live without checking `wrangler d1 migrations list undangan-db --remote` yourself first. |
-| `kodekraft-shared` itself | `package.json` says **`0.13.0`**, and **every tag in `RELEASING.md`'s version history is on the remote** — re-verified 2026-09-23 by comparing `git tag -l` against `git ls-remote --tags origin`. The "several versions not yet tagged and pushed" warning that stood here was true when written and is no longer. Three versions deliberately have no tag of their own (`v0.4.0`, `v0.8.0`, `v0.10.0`); their content shipped inside the next release, and `RELEASING.md` §6 marks each. |
-| The 4 apps' `@kodekraft/shared` pin | **All four are on `#v0.13.0`** (re-verified 2026-09-23). They are not independent any more and must not be allowed to drift: `v0.13.0` is a lockstep release (it changes `migrations.lock.json`), and §7's rule is that a lock change moves all four pins together. If they ever disagree, the odd repo's `check:ownership` is validating against a different grant matrix than the rest. **Check the pin AND the installed copy** — on 2026-09-22 all four were pinned to `v0.13.0` while still holding 0.11.0/0.12.0 on disk, so re-run `pnpm install` after any pin change. |
+| Migrations `0013`–`0026` | **APPLIED REMOTELY — corrected 2026-09-24.** This row said "authored and locked locally only" with a confirmed baseline of `0001`–`0012`. Both were stale: `wrangler d1 migrations list undangan-db --remote` returned **"No migrations to apply"** on 2026-09-24 with `0026` the highest file, so the whole `0013`–`0026` range is live. |
+| Migrations `0027`–`0028` (`clients.email` NOCASE unique index; twelve enum-guard triggers) | **Authored and locked locally only**, shipped in `kodekraft-shared` **v0.14.0**. Neither changes any repo's `schema.ts` mirror, so — unlike `0026` — there is **no deploy-ordering hazard**: code and migration may land in either order. Both have a **prerequisite query in their own header that must be run first**; `0028`'s especially, because it does NOT fail on pre-existing bad rows. See §3. |
+| `kodekraft-shared` itself | `package.json` says **`0.14.0`** (bumped 2026-09-24 for the `0027`/`0028` lock change), and **every tag in `RELEASING.md`'s version history is on the remote** — re-verified 2026-09-23 by comparing `git tag -l` against `git ls-remote --tags origin`. The "several versions not yet tagged and pushed" warning that stood here was true when written and is no longer. Three versions deliberately have no tag of their own (`v0.4.0`, `v0.8.0`, `v0.10.0`); their content shipped inside the next release, and `RELEASING.md` §6 marks each. |
+| The 4 apps' `@kodekraft/shared` pin | **All four are on `#v0.14.0`** (moved 2026-09-24; `v0.14.0` is a lockstep release). They are not independent any more and must not be allowed to drift: `v0.14.0` is a lockstep release (it changes `migrations.lock.json`), and §7's rule is that a lock change moves all four pins together. If they ever disagree, the odd repo's `check:ownership` is validating against a different grant matrix than the rest. **Check the pin AND the installed copy** — on 2026-09-22 all four were pinned to `v0.13.0` while still holding 0.11.0/0.12.0 on disk, so re-run `pnpm install` after any pin change. |
 | The ownership guard's mode per repo | **Not uniform — read §6 before deploying.** worker-user and worker-undangan wire `getDb(..., { mode: "warn" })` explicitly. worker-landing's `src/db.ts` calls `getDb(env.DB, "worker-landing")` with **no mode argument**, which defaults to `"throw"` — confirmed directly in that file's own code and header comment as of this writing. **Resolved since this was written:** that is the rollout state, not an accident — worker-landing is the one repo already flipped to `throw`, and worker-user, worker-admin and worker-undangan are still in their log-only soak. `QA-shared-16` tracks the per-repo flip and the transition is tested in all four (`warn` logs `db.ownership.violation` and the statement still executes; `throw` refuses the identical write at `prepare()`; the default is `throw`, so `warn` is always an explicit opt-in). |
 
-Because of this, "deploying a release" today means: apply `0013`–`0026` to remote D1 (§3),
-then deploy the 4 apps' pending code in the order in §4 — not "everything is already live,
-just redeploy."
+Because of this, "deploying a release" today means: apply `0027`–`0028` to remote D1 (§3 —
+`0013`–`0026` are already applied, see the table above), then deploy the 4 apps' pending code
+in the order in §4.
 
 ## 3. Step A — apply pending migrations to the shared D1
 
-> **Range check, 2026-09-23.** This section and §2/§4/§8 said `0013`–`0023` until today; the
-> lineage now runs to **`0026`**. Applying the old range would leave `0024`/`0025` (template
-> section-bg keys) and `0026` (event taxonomy) unapplied — and `0026` is the one that breaks
-> checkout, see the worker-landing precondition in §4. Always confirm the real range against
-> `invitation-worker-landing/migrations/` rather than trusting a number written in prose.
+> **Range check, updated 2026-09-24. Do not trust the numbers in this file's prose — they have
+> now gone stale twice.** On 2026-09-23 this section said `0013`–`0023` when the lineage ran to
+> `0026`; today it said `0026` when the lineage runs to **`0028`**. Before applying anything,
+> run `ls invitation-worker-landing/migrations/` and `wrangler d1 migrations list undangan-db
+> --remote`, and take the range from those two, not from here.
+>
+> **State as of 2026-09-24:** `0001`–`0026` are applied remotely (`--remote` reported "No
+> migrations to apply"). `0027` and `0028` are pending.
+>
+> **`0027` and `0028` each carry a prerequisite query in their own file header, and they fail
+> differently — which matters more than it sounds.** `0027` (unique index on `email COLLATE
+> NOCASE`) **fails loudly** if a colliding pair already exists: it writes nothing, but the
+> migration stops and the merge is manual. `0028` (enum-guard triggers) **does not fail at
+> all** on pre-existing bad rows — a trigger only sees new writes. So skipping `0028`'s six
+> `NOT IN (...)` checks leaves a bad row sitting behind a guard that looks like it is holding.
+> Run both headers' queries before applying.
 
 **Do this before deploying any Worker whose code reads/writes a column from these
 migrations.** Full command list, per-migration rollback SQL, and the "what each migration
 unlocks" table are in `invitation-worker-landing/project-docs/16-migration-rollout-plan.md`
 — this section is the condensed procedure, not a replacement for it.
 
-1. **Tag and push `kodekraft-shared` first** so its `migrations.lock.json` (which already
-   has all 23 entries locked locally) is resolvable by the 4 apps once they bump their pin —
-   see §7. A repo that merges the mirrored `0013`–`0026` files into its own `migrations/`
-   folder before bumping its `@kodekraft/shared` pin will fail `check:ownership`'s R7 rule
-   ("unexpected file — not present in migrations.lock.json").
+1. **Tag and push `kodekraft-shared` first** so its `migrations.lock.json` (28 entries as of
+   `v0.14.0`) is resolvable by the 4 apps once they bump their pin — see §7. A repo that
+   merges a mirrored migration into its own `migrations/` folder before bumping its
+   `@kodekraft/shared` pin will fail `check:ownership`'s R7 rule ("unexpected file — not
+   present in migrations.lock.json"). **Already done for `v0.14.0`:** tagged, pushed, and all
+   four pins moved on 2026-09-24.
 2. **Back up remote D1** (run from `invitation-worker-landing/`, any sibling works since the
    D1 is shared):
    ```bash
@@ -233,7 +246,7 @@ this package's own `RELEASING.md`. Summary relevant to a deploy:
   Worker that predates a column the *current* schema requires can still run fine (migrations
   are additive; old code just ignores new columns), but a Worker rolled back to before a
   column it *used to* rely on was dropped will break.
-- **Migrations**: the default rollback for every migration in `0013`–`0026` is "leave it in
+- **Migrations**: the default rollback for every migration in `0013`–`0028` is "leave it in
   place" — every one of them is purely additive (new nullable/defaulted columns or new
   tables), so an unused column/table is harmless even if the code that would populate it is
   rolled back. A true rollback (accepting data loss in the new columns/tables) is documented
