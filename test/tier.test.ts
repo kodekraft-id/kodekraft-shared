@@ -20,6 +20,7 @@ import {
 
 const TIERS: PackageTier[] = ["basic", "premium", "exclusive"];
 const TIER_PHOTO_CAP: Record<PackageTier, number> = { basic: 5, premium: 15, exclusive: 50 };
+const TIER_GUEST_CAP: Record<PackageTier, number> = { basic: 250, premium: 500, exclusive: 1000 };
 const TIER_MONTHS: Record<PackageTier, number> = { basic: 3, premium: 6, exclusive: 12 };
 
 describe("TIER_CAPABILITIES", () => {
@@ -30,6 +31,7 @@ describe("TIER_CAPABILITIES", () => {
   it.each(TIERS)("%s: photo cap and duration match the rulings; QR and domain are add-ons only", (tier) => {
     expect(TIER_CAPABILITIES[tier]).toEqual({
       photoCap: TIER_PHOTO_CAP[tier],
+      guestCap: TIER_GUEST_CAP[tier],
       qrCheckin: false,
       customDomain: false,
       durationMonths: TIER_MONTHS[tier],
@@ -244,6 +246,9 @@ describe("getEffectiveCapabilities", () => {
       const galleryCap = Math.min(TIER_PHOTO_CAP[tier] + 15 * (combo.gallery ?? 0), 50);
       expect(getEffectiveCapabilities(tier, combo, override)).toEqual({
         photoCap: override ?? Math.max(TIER_PHOTO_CAP[tier], galleryCap),
+        // No `guests` unit in these combos, and the 4th argument is left off, so the guest cap
+        // stays at the tier default — proving the photo override never leaks across caps.
+        guestCap: TIER_GUEST_CAP[tier],
         qrCheckin: combo.qrcheckin === 1,
         customDomain: combo.domain === 1,
         durationMonths: TIER_MONTHS[tier],
@@ -260,6 +265,7 @@ describe("getEffectiveCapabilities", () => {
     expect(getEffectiveCapabilities("basic", {}, 80).photoCap).toBe(80);
     expect(getEffectiveCapabilities("exclusive", { domain: 1, qrcheckin: 1 })).toEqual({
       photoCap: 50,
+      guestCap: 1000,
       qrCheckin: true,
       customDomain: true,
       durationMonths: 12,

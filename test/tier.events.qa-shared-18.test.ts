@@ -41,9 +41,9 @@ describe("QA-shared-18 — regression: pre-existing exports unaffected by BE-mon
 
   it("TIER_CAPABILITIES values/shape are exactly what QA-shared-17 pinned, still frozen", () => {
     expect(TIER_CAPABILITIES).toEqual({
-      basic: { photoCap: 5, qrCheckin: false, customDomain: false, durationMonths: 3 },
-      premium: { photoCap: 15, qrCheckin: false, customDomain: false, durationMonths: 6 },
-      exclusive: { photoCap: 50, qrCheckin: false, customDomain: false, durationMonths: 12 },
+      basic: { photoCap: 5, guestCap: 250, qrCheckin: false, customDomain: false, durationMonths: 3 },
+      premium: { photoCap: 15, guestCap: 500, qrCheckin: false, customDomain: false, durationMonths: 6 },
+      exclusive: { photoCap: 50, guestCap: 1000, qrCheckin: false, customDomain: false, durationMonths: 12 },
     });
     expect(Object.isFrozen(TIER_CAPABILITIES)).toBe(true);
   });

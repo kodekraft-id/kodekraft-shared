@@ -38,7 +38,7 @@ describe("tier.ts backward compatibility", () => {
   });
 
   it("TIER_CAPABILITIES has no personalGuestLinks / story / min_tier flag (doc 11 guard comments)", () => {
-    const allowed = ["customDomain", "durationMonths", "photoCap", "qrCheckin"];
+    const allowed = ["customDomain", "durationMonths", "guestCap", "photoCap", "qrCheckin"];
     for (const capabilities of Object.values(TIER_CAPABILITIES)) {
       expect(Object.keys(capabilities).sort()).toEqual(allowed);
     }

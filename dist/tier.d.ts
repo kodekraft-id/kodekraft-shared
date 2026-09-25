@@ -3,6 +3,9 @@
 export type PackageTier = "basic" | "premium" | "exclusive";
 export interface TierCapabilities {
     photoCap: number;
+    /** Baris tamu yang boleh DITAMBAHKAN (doc 20 §1: baris, bukan pax). Bukan batas berapa
+     * orang yang boleh MEMBUKA undangan — tamu yang sudah ada tidak pernah diblokir. */
+    guestCap: number;
     /** Always `false` at every tier (doc 17 ruling 13): QR check-in is an ADD-ON ONLY. Kept as a
      * field so the type shape and existing 2-arg callers still compile. */
     qrCheckin: boolean;
@@ -13,12 +16,14 @@ export interface TierCapabilities {
     durationMonths: number | null;
 }
 /** Capability-bearing purchasable add-on ids (doc 17 §4). `express` is deliberately NOT one. */
-export type AddonId = "domain" | "qrcheckin" | "gallery";
+export type AddonId = "domain" | "qrcheckin" | "gallery" | "guests";
 /** Per-invitation purchased add-ons: `{ [addonId]: quantity }`, persisted in
  * `invitations.purchased_addons` (JSON, nullable). Binary add-ons are always quantity 1. */
 export type PurchasedAddons = Partial<Record<AddonId, number>>;
 /** Extra photos granted by one `gallery` add-on unit. */
 export declare const GALLERY_ADDON_PHOTOS = 15;
+/** Baris tamu yang ditambahkan satu unit add-on `guests` (doc 20 §2: +100 tamu, Rp 25.000). */
+export declare const GUESTS_ADDON_GUESTS = 100;
 /** Hard photo ceiling for the tier-plus-add-on path (doc 17 ruling 7). A staff override may exceed it. */
 export declare const PHOTO_CEILING = 50;
 /** Sane upper bound applied when parsing a stored add-on quantity (defends against garbage rows). */
@@ -46,10 +51,23 @@ export declare function maxUsefulGalleryUnits(tier: PackageTier): number;
  * legitimate override; only `null`/`undefined` fall back. An override may exceed the ceiling.
  */
 export declare function getEffectivePhotoCap(tier: PackageTier, override?: number | null, addons?: PurchasedAddons | null): number;
+/**
+ * Kuota tamu efektif: override staf (`invitations.guest_cap_override`) kalau diisi, kalau tidak
+ * `tierCap + 100 x guestsQty`. `0` adalah override yang sah; hanya `null`/`undefined` yang jatuh
+ * ke perhitungan biasa.
+ *
+ * Sengaja TIDAK ada plafon global seperti `PHOTO_CEILING`. Plafon foto ada karena setiap foto
+ * menambah bobot halaman yang harus dimuat tamu di jaringan seluler — batas teknis, bukan
+ * komersial. Baris tamu tidak punya batas setara: satu baris adalah satu baris D1, dan tidak ada
+ * satu pun halaman yang memuat semuanya sekaligus. Batas praktisnya adalah
+ * {@link MAX_ADDON_QUANTITY} unit (= 9.900 tamu tambahan), yang berlaku saat kuantitas dibaca.
+ * Menambahkan plafon buatan di sini hanya akan menolak uang pelanggan tanpa alasan teknis.
+ */
+export declare function getEffectiveGuestCap(tier: PackageTier, override?: number | null, addons?: PurchasedAddons | null): number;
 /** Whether an invitation has a binary feature: the tier grants it (never today) OR it was purchased. */
 export declare function hasFeature(tier: PackageTier, feature: "qrCheckin" | "customDomain", addons?: PurchasedAddons | null): boolean;
 /** Everything an invitation is actually entitled to: tier defaults + purchased add-ons + staff override. */
-export declare function getEffectiveCapabilities(tier: PackageTier, addons?: PurchasedAddons | null, photoCapOverride?: number | null): TierCapabilities;
+export declare function getEffectiveCapabilities(tier: PackageTier, addons?: PurchasedAddons | null, photoCapOverride?: number | null, guestCapOverride?: number | null): TierCapabilities;
 /** Computes `invitations.expires_at` at publish time. Pure — no D1 access. The `null` branch is
  * legacy/defensive only (no tier has a null duration any more). Shares its month arithmetic with
  * {@link computeExpiresAtFromEvents} via the internal `addTierPeriodMonths` helper. */

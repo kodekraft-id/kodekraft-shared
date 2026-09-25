@@ -5,6 +5,8 @@
 // over `hasFeature`, throwing its own local `HttpError`, since the response envelope stays per-repo.
 /** Extra photos granted by one `gallery` add-on unit. */
 export const GALLERY_ADDON_PHOTOS = 15;
+/** Baris tamu yang ditambahkan satu unit add-on `guests` (doc 20 §2: +100 tamu, Rp 25.000). */
+export const GUESTS_ADDON_GUESTS = 100;
 /** Hard photo ceiling for the tier-plus-add-on path (doc 17 ruling 7). A staff override may exceed it. */
 export const PHOTO_CEILING = 50;
 /** Sane upper bound applied when parsing a stored add-on quantity (defends against garbage rows). */
@@ -17,9 +19,9 @@ const PREMIUM_DURATION_MONTHS = 6;
  * v0.4.0 VALUE CHANGE: qrCheckin/customDomain are false at every tier (add-ons only);
  * durations are basic 3 / premium 6 / exclusive 12 (no tier is "never expires"). */
 export const TIER_CAPABILITIES = Object.freeze({
-    basic: { photoCap: 5, qrCheckin: false, customDomain: false, durationMonths: 3 },
-    premium: { photoCap: 15, qrCheckin: false, customDomain: false, durationMonths: PREMIUM_DURATION_MONTHS },
-    exclusive: { photoCap: 50, qrCheckin: false, customDomain: false, durationMonths: 12 },
+    basic: { photoCap: 5, guestCap: 250, qrCheckin: false, customDomain: false, durationMonths: 3 },
+    premium: { photoCap: 15, guestCap: 500, qrCheckin: false, customDomain: false, durationMonths: PREMIUM_DURATION_MONTHS },
+    exclusive: { photoCap: 50, guestCap: 1000, qrCheckin: false, customDomain: false, durationMonths: 12 },
 });
 // Personal guest links (`guests.token`, the `?to=` mechanism) are deliberately NOT modeled
 // in this map: every tier has them, unconditionally (confirmed 2026-09-17). Do not add a
@@ -30,7 +32,7 @@ export const TIER_CAPABILITIES = Object.freeze({
 //
 // Templates are tier-agnostic by product decision (2026-09-17): this map is keyed ONLY by
 // tier, never by template key. No `templates.min_tier` column exists or should be added.
-const ADDON_IDS = ["domain", "qrcheckin", "gallery"];
+const ADDON_IDS = ["domain", "qrcheckin", "gallery", "guests"];
 const BINARY_ADDON_IDS = new Set(["domain", "qrcheckin"]);
 function isAddonId(value) {
     return typeof value === "string" && ADDON_IDS.includes(value);
@@ -99,6 +101,24 @@ export function getEffectivePhotoCap(tier, override, addons) {
     const withGallery = tierCap + GALLERY_ADDON_PHOTOS * (addons?.gallery ?? 0);
     return Math.max(tierCap, Math.min(withGallery, PHOTO_CEILING));
 }
+/**
+ * Kuota tamu efektif: override staf (`invitations.guest_cap_override`) kalau diisi, kalau tidak
+ * `tierCap + 100 x guestsQty`. `0` adalah override yang sah; hanya `null`/`undefined` yang jatuh
+ * ke perhitungan biasa.
+ *
+ * Sengaja TIDAK ada plafon global seperti `PHOTO_CEILING`. Plafon foto ada karena setiap foto
+ * menambah bobot halaman yang harus dimuat tamu di jaringan seluler — batas teknis, bukan
+ * komersial. Baris tamu tidak punya batas setara: satu baris adalah satu baris D1, dan tidak ada
+ * satu pun halaman yang memuat semuanya sekaligus. Batas praktisnya adalah
+ * {@link MAX_ADDON_QUANTITY} unit (= 9.900 tamu tambahan), yang berlaku saat kuantitas dibaca.
+ * Menambahkan plafon buatan di sini hanya akan menolak uang pelanggan tanpa alasan teknis.
+ */
+export function getEffectiveGuestCap(tier, override, addons) {
+    if (override !== null && override !== undefined)
+        return override;
+    const tierCap = TIER_CAPABILITIES[tier].guestCap;
+    return tierCap + GUESTS_ADDON_GUESTS * (addons?.guests ?? 0);
+}
 /** Whether an invitation has a binary feature: the tier grants it (never today) OR it was purchased. */
 export function hasFeature(tier, feature, addons) {
     if (TIER_CAPABILITIES[tier][feature])
@@ -107,9 +127,10 @@ export function hasFeature(tier, feature, addons) {
     return (addons?.[addonId] ?? 0) >= 1;
 }
 /** Everything an invitation is actually entitled to: tier defaults + purchased add-ons + staff override. */
-export function getEffectiveCapabilities(tier, addons, photoCapOverride) {
+export function getEffectiveCapabilities(tier, addons, photoCapOverride, guestCapOverride) {
     return {
         photoCap: getEffectivePhotoCap(tier, photoCapOverride, addons),
+        guestCap: getEffectiveGuestCap(tier, guestCapOverride, addons),
         qrCheckin: hasFeature(tier, "qrCheckin", addons),
         customDomain: hasFeature(tier, "customDomain", addons),
         durationMonths: TIER_CAPABILITIES[tier].durationMonths,

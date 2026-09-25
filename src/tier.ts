@@ -10,6 +10,9 @@ export type PackageTier = "basic" | "premium" | "exclusive";
 
 export interface TierCapabilities {
   photoCap: number;
+  /** Baris tamu yang boleh DITAMBAHKAN (doc 20 §1: baris, bukan pax). Bukan batas berapa
+   * orang yang boleh MEMBUKA undangan — tamu yang sudah ada tidak pernah diblokir. */
+  guestCap: number;
   /** Always `false` at every tier (doc 17 ruling 13): QR check-in is an ADD-ON ONLY. Kept as a
    * field so the type shape and existing 2-arg callers still compile. */
   qrCheckin: boolean;
@@ -21,7 +24,7 @@ export interface TierCapabilities {
 }
 
 /** Capability-bearing purchasable add-on ids (doc 17 §4). `express` is deliberately NOT one. */
-export type AddonId = "domain" | "qrcheckin" | "gallery";
+export type AddonId = "domain" | "qrcheckin" | "gallery" | "guests";
 
 /** Per-invitation purchased add-ons: `{ [addonId]: quantity }`, persisted in
  * `invitations.purchased_addons` (JSON, nullable). Binary add-ons are always quantity 1. */
@@ -29,6 +32,9 @@ export type PurchasedAddons = Partial<Record<AddonId, number>>;
 
 /** Extra photos granted by one `gallery` add-on unit. */
 export const GALLERY_ADDON_PHOTOS = 15;
+
+/** Baris tamu yang ditambahkan satu unit add-on `guests` (doc 20 §2: +100 tamu, Rp 25.000). */
+export const GUESTS_ADDON_GUESTS = 100;
 
 /** Hard photo ceiling for the tier-plus-add-on path (doc 17 ruling 7). A staff override may exceed it. */
 export const PHOTO_CEILING = 50;
@@ -45,9 +51,9 @@ const PREMIUM_DURATION_MONTHS = 6;
  * v0.4.0 VALUE CHANGE: qrCheckin/customDomain are false at every tier (add-ons only);
  * durations are basic 3 / premium 6 / exclusive 12 (no tier is "never expires"). */
 export const TIER_CAPABILITIES: Readonly<Record<PackageTier, TierCapabilities>> = Object.freeze({
-  basic: { photoCap: 5, qrCheckin: false, customDomain: false, durationMonths: 3 },
-  premium: { photoCap: 15, qrCheckin: false, customDomain: false, durationMonths: PREMIUM_DURATION_MONTHS },
-  exclusive: { photoCap: 50, qrCheckin: false, customDomain: false, durationMonths: 12 },
+  basic: { photoCap: 5, guestCap: 250, qrCheckin: false, customDomain: false, durationMonths: 3 },
+  premium: { photoCap: 15, guestCap: 500, qrCheckin: false, customDomain: false, durationMonths: PREMIUM_DURATION_MONTHS },
+  exclusive: { photoCap: 50, guestCap: 1000, qrCheckin: false, customDomain: false, durationMonths: 12 },
 });
 
 // Personal guest links (`guests.token`, the `?to=` mechanism) are deliberately NOT modeled
@@ -60,7 +66,7 @@ export const TIER_CAPABILITIES: Readonly<Record<PackageTier, TierCapabilities>> 
 // Templates are tier-agnostic by product decision (2026-09-17): this map is keyed ONLY by
 // tier, never by template key. No `templates.min_tier` column exists or should be added.
 
-const ADDON_IDS: readonly AddonId[] = ["domain", "qrcheckin", "gallery"];
+const ADDON_IDS: readonly AddonId[] = ["domain", "qrcheckin", "gallery", "guests"];
 const BINARY_ADDON_IDS: ReadonlySet<AddonId> = new Set<AddonId>(["domain", "qrcheckin"]);
 
 function isAddonId(value: unknown): value is AddonId {
@@ -131,6 +137,28 @@ export function getEffectivePhotoCap(
   return Math.max(tierCap, Math.min(withGallery, PHOTO_CEILING));
 }
 
+/**
+ * Kuota tamu efektif: override staf (`invitations.guest_cap_override`) kalau diisi, kalau tidak
+ * `tierCap + 100 x guestsQty`. `0` adalah override yang sah; hanya `null`/`undefined` yang jatuh
+ * ke perhitungan biasa.
+ *
+ * Sengaja TIDAK ada plafon global seperti `PHOTO_CEILING`. Plafon foto ada karena setiap foto
+ * menambah bobot halaman yang harus dimuat tamu di jaringan seluler — batas teknis, bukan
+ * komersial. Baris tamu tidak punya batas setara: satu baris adalah satu baris D1, dan tidak ada
+ * satu pun halaman yang memuat semuanya sekaligus. Batas praktisnya adalah
+ * {@link MAX_ADDON_QUANTITY} unit (= 9.900 tamu tambahan), yang berlaku saat kuantitas dibaca.
+ * Menambahkan plafon buatan di sini hanya akan menolak uang pelanggan tanpa alasan teknis.
+ */
+export function getEffectiveGuestCap(
+  tier: PackageTier,
+  override?: number | null,
+  addons?: PurchasedAddons | null,
+): number {
+  if (override !== null && override !== undefined) return override;
+  const tierCap = TIER_CAPABILITIES[tier].guestCap;
+  return tierCap + GUESTS_ADDON_GUESTS * (addons?.guests ?? 0);
+}
+
 /** Whether an invitation has a binary feature: the tier grants it (never today) OR it was purchased. */
 export function hasFeature(
   tier: PackageTier,
@@ -147,9 +175,11 @@ export function getEffectiveCapabilities(
   tier: PackageTier,
   addons?: PurchasedAddons | null,
   photoCapOverride?: number | null,
+  guestCapOverride?: number | null,
 ): TierCapabilities {
   return {
     photoCap: getEffectivePhotoCap(tier, photoCapOverride, addons),
+    guestCap: getEffectiveGuestCap(tier, guestCapOverride, addons),
     qrCheckin: hasFeature(tier, "qrCheckin", addons),
     customDomain: hasFeature(tier, "customDomain", addons),
     durationMonths: TIER_CAPABILITIES[tier].durationMonths,

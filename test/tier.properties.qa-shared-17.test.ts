@@ -324,12 +324,32 @@ describe("QA-shared-17: TIER_CAPABILITIES is frozen and shaped as documented", (
     expect(TIER_CAPABILITIES.basic.photoCap).toBe(before);
   });
 
-  it("every tier row has exactly the four documented keys and no others", () => {
+  it("every tier row has exactly the five documented keys and no others", () => {
     // The guard comments in doc 11 call out `personalGuestLinks` and story flags by name:
     // personal links are ungated at every tier, so a flag here would be a gate nobody asked for.
+    //
+    // `guestCap` (doc 20, 2026-09-25) is the fifth key, and adding it did NOT contradict that
+    // guard: it caps how many guest ROWS may be ADDED, not whether personal links work. Every
+    // tier still has them, unconditionally, and an already-added guest is never blocked.
     for (const tier of TIERS) {
-      expect(Object.keys(TIER_CAPABILITIES[tier]).sort()).toEqual(["customDomain", "durationMonths", "photoCap", "qrCheckin"]);
+      expect(Object.keys(TIER_CAPABILITIES[tier]).sort()).toEqual([
+        "customDomain",
+        "durationMonths",
+        "guestCap",
+        "photoCap",
+        "qrCheckin",
+      ]);
     }
+  });
+
+  it("guestCap is 250/500/1000 and strictly increases with tier (doc 20 §2)", () => {
+    expect(TIER_CAPABILITIES.basic.guestCap).toBe(250);
+    expect(TIER_CAPABILITIES.premium.guestCap).toBe(500);
+    expect(TIER_CAPABILITIES.exclusive.guestCap).toBe(1000);
+    // Capacity rises FASTER than price (1:2:4 vs 1:2:3.5) — that ratio is what makes the
+    // upper tiers feel better value per guest, and it is a pricing decision, not an accident.
+    expect(TIER_CAPABILITIES.premium.guestCap).toBeGreaterThan(TIER_CAPABILITIES.basic.guestCap);
+    expect(TIER_CAPABILITIES.exclusive.guestCap).toBeGreaterThan(TIER_CAPABILITIES.premium.guestCap);
   });
 
   it("qrCheckin and customDomain are false at EVERY tier — they are add-ons only (doc 17 ruling 13)", () => {
