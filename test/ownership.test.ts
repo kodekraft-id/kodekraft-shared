@@ -42,11 +42,26 @@ describe("writableColumns", () => {
     expect(columns).toContain("activation_expires_at");
   });
 
-  it("gives worker-user the invitation CREATION columns — a creator that cannot write `id` cannot create", () => {
+  it("no longer gives worker-user the invitation CREATION columns — it is not a creator", () => {
+    // Inverted, not deleted (2026-09-25). BE-mono-33 granted these columns
+    // precisely because worker-user CREATED invitations via `POST
+    // /api/invitations`: "a creator that may not write `id` cannot create".
+    //
+    // That endpoint was removed in BE-user-36 — it let any logged-in client
+    // mint invitations without paying, while both legitimate creation paths
+    // (worker-landing provisioning, worker-admin's staff endpoint) stayed
+    // intact. With the only INSERT gone, the reason for the grant went with it.
     const columns = writableColumns("invitations", "worker-user");
-    for (const c of ["id", "client_id", "template_id", "slug", "created_at"]) {
-      expect(columns, c).toContain(c);
+    for (const c of ["id", "client_id", "slug", "created_at"]) {
+      expect(columns, c).not.toContain(c);
     }
+  });
+
+  it("KEEPS template_id for worker-user — changing template is editing, not creating", () => {
+    // The paired positive case, and not a formality: `template_id` IS in
+    // `invitationUpdateSchema`, so revoking it alongside the other four would
+    // break changing an invitation's template from the dashboard.
+    expect(writableColumns("invitations", "worker-user")).toContain("template_id");
   });
 
   it("does include activation_token_hash in worker-landing's clients allowlist", () => {

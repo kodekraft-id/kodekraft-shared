@@ -26,5 +26,6 @@
   "0025_template_section_bg_all.sql": "de937aa4cac639783b6cfd6f1b2e1f5f43f8855fcd6c3c2b5dd26f29fd601cb5",
   "0026_event_label_rename.sql": "2269e0c3c8f5e95a82b53c941c37e490b63c3f1554ee3998f87da763fe455cbe",
   "0027_client_email_collation.sql": "947e19818a6f54863eca691ed9c8c72fc0addaef0ac69e69b22b482a8875c794",
-  "0028_enum_guards.sql": "b5a593d632444e04df68aac289830f350b8b1c0c49ca1526e76e2b8ed8a8d35b"
+  "0028_enum_guards.sql": "b5a593d632444e04df68aac289830f350b8b1c0c49ca1526e76e2b8ed8a8d35b",
+  "0029_orders_kind.sql": "5a109f27efee7f2b1ef39a4fa414fe5de78ce90c1854f9c6494f359053804da9"
 }
