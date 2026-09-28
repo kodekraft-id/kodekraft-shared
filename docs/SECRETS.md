@@ -209,47 +209,135 @@ administrator**.
 the production D1 carried a `password_hash` **byte-identical** to one in `seed.sql`. PBKDF2
 salts are random per hash, so matching salt AND digest is the seed row itself, not chance.
 
+**Status 2026-09-28: no rotation has been recorded since.** It is the first item on Pram's
+checklist ("Tugas Pram KodeKraft"). Treat all five accounts as open until each one refuses the
+seed password.
+
 | Account | Table | What it can do | Priority |
 |---|---|---|---|
 | `superadmin@kodekraft.id` | `admins` | Full admin panel | **Rotate first** |
 | `ops@kodekraft.id` | `admins` | Full admin panel (same hash as above - same password) | **Rotate first** |
-| `admin@kodekraft.id` | `clients` | Owns **all five demo invitations the storefront links to** | **Rotate first** |
+| `admin@kodekraft.id` | `clients` | Owns **every demo invitation the storefront links to** | **Rotate first** |
 | `bali@kodekraft.id` | `clients` | Owns nothing live | Rotate or delete |
 | `jaya@kodekraft.id` | `clients` | Owns nothing live | Rotate or delete |
 
-The third row is the one that is easy to underrate: it is not an admin, but it owns
-`metatah-anggun` and the four `preview-*` invitations. Someone logging in as it can edit
-the demos every prospective customer clicks from `kodekraft.id`.
+The third row is the one that is easy to underrate: it is not an admin, but it owns all seven
+demos (`metatah-anggun`, due to become `preview-bali-elegant`, and the six other `preview-*`
+invitations; the two added on 2026-09-24 were cloned from `pv_lily_inv`, owner included).
+Someone logging in as it can edit the demos every prospective customer clicks from
+`kodekraft.id`.
 
-**Do not delete those three demo invitations' owner** - the storefront gallery links to them
-and they would 404. Rotate the password instead.
+**Do not delete the demo owner** - the storefront gallery links to its invitations and they
+would 404. Rotate its password instead.
 
 ### Rotating one
 
-Generate a hash (password read from stdin, so it never enters shell history):
+Rotate through the apps, not through SQL. The server hashes the new password itself, enforces
+the password rules (at least 8 characters with an upper-case letter, a lower-case letter, a
+digit and a symbol) and bumps `token_version` in the same write, which revokes every session
+already issued for that account. The revocation is the point: the old password was public, so
+you cannot know who is already holding a token.
 
-```bash
-node -e 'const c=require("crypto");let d="";process.stdin.on("data",x=>d+=x).on("end",()=>{const pw=d.replace(/?
-$/,"");const s=c.randomBytes(16);const h=c.pbkdf2Sync(pw,s,100000,32,"sha256");console.log("pbkdf2$100000$"+s.toString("base64")+"$"+h.toString("base64"))})'
+- **Clients** (`admin@`, `bali@`, `jaya@`): sign in at `dash-invitation.kodekraft.id`, open
+  **Profil**, fill **Password baru** and save. For `bali@` and `jaya@`, deleting the account in
+  the admin panel (**Klien → Hapus**) is an equally good fix: it is a soft delete, and a deleted
+  client can neither sign in nor use a token issued earlier.
+- **Admins** (`superadmin@`, `ops@`): the admin panel has no password page, although the API
+  has `PATCH /api/auth/me`. Sign in at `adm-invitation.kodekraft.id`, open the browser console
+  (F12 → Console; Chrome may ask you to type `allow pasting` first) and paste the snippet
+  below. It asks for the new password in a prompt and prints `BERHASIL`, or `DITOLAK` with the
+  rule that failed. Checked on 2026-09-28 against a local worker-admin: a weak password is
+  refused and the old one keeps working; a valid one is accepted, the old password stops
+  working, and the session the page was holding is revoked.
+
+```js
+(async () => {
+  const pw = prompt("Password baru (min. 8 karakter: huruf besar, huruf kecil, angka, simbol)");
+  if (!pw) return console.log("Dibatalkan.");
+  const rt = localStorage.getItem("kk_admin_refresh");
+  if (!rt) return console.log("Belum masuk. Login dulu, lalu jalankan lagi.");
+  const s = await fetch("/api/auth/refresh-token", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refreshToken: rt }),
+  }).then((r) => r.json());
+  if (s.responseCode !== "00") return console.log("Sesi tidak valid: " + s.responseMessage + ". Login ulang lalu jalankan lagi.");
+  localStorage.setItem("kk_admin_refresh", s.data.refreshToken);
+  const res = await fetch("/api/auth/me", {
+    method: "PATCH",
+    headers: { "content-type": "application/json", authorization: "Bearer " + s.data.token },
+    body: JSON.stringify({ password: pw }),
+  }).then((r) => r.json());
+  console.log(res.responseCode === "00"
+    ? "BERHASIL. Semua sesi akun ini terputus. Muat ulang halaman dan masuk dengan password baru."
+    : "DITOLAK: " + (res.data && res.data.errors ? res.data.errors.map((e) => e.message).join("; ") : res.responseMessage) + ". Password lama masih berlaku.");
+})();
 ```
 
-Then, per account (`admins` or `clients`):
+Afterwards, try the seed password on each of the five accounts. Every attempt must be refused.
 
-```bash
-npx wrangler d1 execute undangan-db --remote --command   "UPDATE admins SET password_hash = '<hash>', token_version = token_version + 1 WHERE email = '<email>'"
+#### Fallback, when nobody can sign in to the account: SQL
+
+Only for an account whose current password nobody knows. The one-liner that used to be here
+was broken twice over, and both faults are worth knowing before writing another. A literal
+line break inside its regex made it a syntax error. And the `UPDATE` then carried the hash
+inside a double-quoted shell string, where `pbkdf2$100000$...` is not literal: bash expands
+`$1` and PowerShell `$100000` to nothing, so the command would have stored a hash that no
+password matches and locked the account for good.
+
+So here the hash never passes through a shell. Save this as `rotate-password-sql.mjs`
+**outside any repo** (it only parses as written; the app-level paths above are the tested ones):
+
+```js
+// rotate-password-sql.mjs - writes one UPDATE statement that sets a new password.
+// Usage: node rotate-password-sql.mjs <admins|clients> <email> <output.sql>
+// The password is typed at the prompt, so it never enters shell history, and the
+// statement goes straight to a file, so the hash never passes through a shell.
+import { pbkdf2Sync, randomBytes } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const [table, email, out] = process.argv.slice(2);
+if (!["admins", "clients"].includes(table) || !/^[^\s'@]+@[^\s'@]+$/.test(email || "") || !out) {
+  console.error("Usage: node rotate-password-sql.mjs <admins|clients> <email> <output.sql>");
+  process.exit(1);
+}
+const rl = createInterface({ input: process.stdin, output: process.stderr });
+rl.question("New password: ", (pw) => {
+  rl.close();
+  const strong = pw.length >= 8 && /[a-z]/.test(pw) && /[A-Z]/.test(pw) && /[0-9]/.test(pw) && /[^a-zA-Z0-9]/.test(pw);
+  if (!strong) {
+    console.error("Needs at least 8 characters with an upper-case letter, a lower-case letter, a digit and a symbol.");
+    process.exit(1);
+  }
+  const salt = randomBytes(16);
+  const hash = pbkdf2Sync(pw, salt, 100000, 32, "sha256");
+  const stored = "pbkdf2$100000$" + salt.toString("base64") + "$" + hash.toString("base64");
+  writeFileSync(out, `UPDATE ${table} SET password_hash = '${stored}', token_version = token_version + 1 WHERE email = '${email}';\n`);
+  console.error(`Wrote ${out}. Run it with --file, then delete it.`);
+});
 ```
 
-`token_version + 1` revokes every session already issued for that account. That is the point:
-the old password was public, so you cannot know who is already holding a token.
+Then, per account (`admins` or `clients`), from any repo folder whose `wrangler.toml` binds
+`undangan-db`:
 
-Afterwards, confirm no production row still matches a seeded hash - compare the first 26
-characters of each `password_hash` against the ones in `seed.sql`. Matching prefixes mean the
-salt is shared, which only happens when the row came from the seed.
+```bash
+node <path-to>/rotate-password-sql.mjs admins superadmin@kodekraft.id rotate.sql
+npx wrangler d1 execute undangan-db --remote --file rotate.sql
+```
+
+Wrangler may ask you to confirm the file import; answer `y`. Delete `rotate.sql` afterwards,
+because it holds the new hash.
+
+To confirm no production row still matches a seeded hash, compare the first 26 characters of
+each `password_hash` against the ones in `seed.sql`. Matching prefixes mean the salt is shared,
+which only happens when the row came from the seed.
 
 ### Why not just delete the demo accounts
 
-The two admins can be deleted once a real admin exists. The three clients cannot: one of them
-owns the five invitations the storefront gallery links to. Rotate those.
+The two admins can be deleted once a real admin exists. Of the three clients, `bali@` and
+`jaya@` can go; `admin@` cannot, because it owns every demo invitation the storefront gallery
+links to. Rotate that one.
 
 ## After every fresh deploy
 
