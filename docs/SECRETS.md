@@ -222,8 +222,8 @@ seed password.
 | `jaya@kodekraft.id` | `clients` | Owns nothing live | Rotate or delete |
 
 The third row is the one that is easy to underrate: it is not an admin, but it owns all seven
-demos (`metatah-anggun`, due to become `preview-bali-elegant`, and the six other `preview-*`
-invitations; the two added on 2026-09-24 were cloned from `pv_lily_inv`, owner included).
+demos, the `preview-*` invitations (the Bali Elegant one was `metatah-anggun` until
+2026-09-28; the two added on 2026-09-24 were cloned from `pv_lily_inv`, owner included).
 Someone logging in as it can edit the demos every prospective customer clicks from
 `kodekraft.id`.
 
