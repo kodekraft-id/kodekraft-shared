@@ -28,12 +28,13 @@ describe("TIER_CAPABILITIES", () => {
     expect(Object.keys(TIER_CAPABILITIES).sort()).toEqual(["basic", "exclusive", "premium"]);
   });
 
-  it.each(TIERS)("%s: photo cap and duration match the rulings; QR and domain are add-ons only", (tier) => {
+  it.each(TIERS)("%s: photo cap and duration match the rulings; QR, domain and Seating Plan are add-ons only", (tier) => {
     expect(TIER_CAPABILITIES[tier]).toEqual({
       photoCap: TIER_PHOTO_CAP[tier],
       guestCap: TIER_GUEST_CAP[tier],
       qrCheckin: false,
       customDomain: false,
+      seating: false,
       durationMonths: TIER_MONTHS[tier],
     });
   });
@@ -125,6 +126,12 @@ describe("parsePurchasedAddons", () => {
 
   it("normalizes binary add-ons to quantity 1", () => {
     expect(parsePurchasedAddons({ qrcheckin: 5, domain: 3 })).toEqual({ qrcheckin: 1, domain: 1 });
+  });
+
+  it("reads the seating add-on (Seating Plan) as binary, from both shapes", () => {
+    expect(parsePurchasedAddons({ seating: 4 })).toEqual({ seating: 1 });
+    expect(parsePurchasedAddons('{"seating":1,"guests":2}')).toEqual({ seating: 1, guests: 2 });
+    expect(parsePurchasedAddons(["seating", "express"])).toEqual({ seating: 1 });
   });
 
   it("does not read inherited keys and does not pollute prototypes", () => {
@@ -251,6 +258,8 @@ describe("getEffectiveCapabilities", () => {
         guestCap: TIER_GUEST_CAP[tier],
         qrCheckin: combo.qrcheckin === 1,
         customDomain: combo.domain === 1,
+        // No `seating` unit in these combos either: neither QR nor domain may grant it.
+        seating: false,
         durationMonths: TIER_MONTHS[tier],
       });
     });
@@ -268,7 +277,20 @@ describe("getEffectiveCapabilities", () => {
       guestCap: 1000,
       qrCheckin: true,
       customDomain: true,
+      seating: false,
       durationMonths: 12,
+    });
+  });
+
+  it("the seating add-on (Seating Plan, doc 21 §5.0 D5) grants only `seating`", () => {
+    expect(getEffectiveCapabilities("basic", { seating: 1 })).toEqual({
+      ...TIER_CAPABILITIES.basic,
+      seating: true,
+    });
+    expect(getEffectiveCapabilities("exclusive", parsePurchasedAddons('{"seating":1,"qrcheckin":1}'))).toMatchObject({
+      qrCheckin: true,
+      seating: true,
+      customDomain: false,
     });
   });
 

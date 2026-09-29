@@ -324,13 +324,16 @@ describe("QA-shared-17: TIER_CAPABILITIES is frozen and shaped as documented", (
     expect(TIER_CAPABILITIES.basic.photoCap).toBe(before);
   });
 
-  it("every tier row has exactly the five documented keys and no others", () => {
+  it("every tier row has exactly the six documented keys and no others", () => {
     // The guard comments in doc 11 call out `personalGuestLinks` and story flags by name:
     // personal links are ungated at every tier, so a flag here would be a gate nobody asked for.
     //
     // `guestCap` (doc 20, 2026-09-25) is the fifth key, and adding it did NOT contradict that
     // guard: it caps how many guest ROWS may be ADDED, not whether personal links work. Every
     // tier still has them, unconditionally, and an already-added guest is never blocked.
+    //
+    // `seating` (doc 21 §5.0 D5, 2026-09-29) is the sixth: a binary add-on flag with the exact
+    // shape of `qrCheckin` — false at every tier, true only when purchased.
     for (const tier of TIERS) {
       expect(Object.keys(TIER_CAPABILITIES[tier]).sort()).toEqual([
         "customDomain",
@@ -338,6 +341,7 @@ describe("QA-shared-17: TIER_CAPABILITIES is frozen and shaped as documented", (
         "guestCap",
         "photoCap",
         "qrCheckin",
+        "seating",
       ]);
     }
   });
@@ -352,15 +356,19 @@ describe("QA-shared-17: TIER_CAPABILITIES is frozen and shaped as documented", (
     expect(TIER_CAPABILITIES.exclusive.guestCap).toBeGreaterThan(TIER_CAPABILITIES.premium.guestCap);
   });
 
-  it("qrCheckin and customDomain are false at EVERY tier — they are add-ons only (doc 17 ruling 13)", () => {
+  it("qrCheckin, customDomain and seating are false at EVERY tier — they are add-ons only (doc 17 ruling 13, doc 21 D5)", () => {
     for (const tier of TIERS) {
       expect(TIER_CAPABILITIES[tier].qrCheckin, tier).toBe(false);
       expect(TIER_CAPABILITIES[tier].customDomain, tier).toBe(false);
+      expect(TIER_CAPABILITIES[tier].seating, tier).toBe(false);
     }
-    // ...so the ONLY way to get either is a purchased add-on.
+    // ...so the ONLY way to get any of them is a purchased add-on — and only its own.
     for (const tier of TIERS) {
       expect(hasFeature(tier, "qrCheckin", { qrcheckin: 1 })).toBe(true);
       expect(hasFeature(tier, "customDomain", { domain: 1 })).toBe(true);
+      expect(hasFeature(tier, "seating", { seating: 1 })).toBe(true);
+      expect(hasFeature(tier, "seating", { qrcheckin: 1, domain: 1, gallery: 3, guests: 5 })).toBe(false);
+      expect(hasFeature(tier, "qrCheckin", { seating: 1 })).toBe(false);
     }
   });
 

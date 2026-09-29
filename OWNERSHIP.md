@@ -16,7 +16,10 @@ consuming repo for how this matrix is enforced against real code.
 | `events` | `schema/content.ts` | worker-user | worker-undangan, worker-admin |
 | `gift_accounts` | `schema/content.ts` | worker-user | worker-undangan |
 | `gifts` | `schema/submissions.ts` | worker-undangan; worker-user | worker-admin |
-| `guests` | `schema/guests.ts` | worker-user (id, invitation_id, name, token, group_name, phone, created_at, checked_in_at, checked_in_by, checkin_method, checked_in_is_test, updated_at); worker-undangan (opened_at, opened_count) | worker-landing |
+| `group_attendees` | `schema/guests.ts` | worker-undangan (id, invitation_id, guest_id, name, pax, rsvp_status, source, device_key, created_at, updated_at); worker-user (id, invitation_id, guest_id, name, pax, source, checked_in_at, checked_in_is_test, created_at, updated_at) | — |
+| `guest_import_chunks` | `schema/guests.ts` | worker-user | — |
+| `guest_imports` | `schema/guests.ts` | worker-user | — |
+| `guests` | `schema/guests.ts` | worker-user (id, invitation_id, name, token, group_name, phone, created_at, checked_in_at, checked_in_by, checkin_method, checked_in_is_test, updated_at, kind, capacity); worker-undangan (opened_at, opened_count) | worker-landing |
 | `invitation_domains` | `schema/domains.ts` | worker-landing (id, invitation_id, domain, kind, status, requested_at, order_id, price_idr, term_months, created_at, updated_at); worker-user; worker-admin | worker-undangan |
 | `invitations` | `schema/invitations.ts` | worker-landing (id, client_id, template_id, slug, status, event_type, event_label, title, opening, story, quote, music_r2_key, music_title, settings, wa_template, package_tier, purchased_addons, created_at, updated_at); worker-user (template_id, title, opening, story, quote, music_r2_key, music_title, settings, wa_template, event_type, event_label, status, activated_at, expires_at, checkin_test_mode, updated_at); worker-admin (id, client_id, template_id, slug, event_type, event_label, title, settings, status, package_tier, photo_cap_override, purchased_addons, checkin_test_mode, created_at, deleted_at, updated_at) | worker-undangan, worker-landing |
 | `order_refunds` | `schema/orders.ts` | worker-admin | worker-landing |
@@ -25,6 +28,8 @@ consuming repo for how this matrix is enforced against real code.
 | `persons` | `schema/content.ts` | worker-user | worker-undangan |
 | `photos` | `schema/content.ts` | worker-user | worker-undangan, worker-admin |
 | `rsvp` | `schema/submissions.ts` | worker-undangan; worker-user | worker-admin |
+| `seating_assignments` | `schema/seating.ts` | worker-user | — |
+| `seating_tables` | `schema/seating.ts` | worker-user | — |
 | `sections` | `schema/sections.ts` | worker-landing; worker-user; worker-admin | worker-undangan |
 | `story_items` | `schema/content.ts` | worker-user | worker-undangan |
 | `templates` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |

@@ -11,12 +11,16 @@ export interface TierCapabilities {
     qrCheckin: boolean;
     /** Always `false` at every tier (doc 17 ruling 13): custom domain is an ADD-ON ONLY. */
     customDomain: boolean;
+    /** Always `false` at every tier: Seating Plan (meja dan kursi tamu) is an ADD-ON ONLY, sold once
+     * per invitation (doc 21 §5.0 D5, Pram 2026-09-29). Same shape as `qrCheckin`. */
+    seating: boolean;
     /** Months of active duration after publish. Every tier has a number today (doc 17 rulings
      * 20/21); `null` = "never expires" is kept in the type ONLY for legacy/defensive paths. */
     durationMonths: number | null;
 }
-/** Capability-bearing purchasable add-on ids (doc 17 §4). `express` is deliberately NOT one. */
-export type AddonId = "domain" | "qrcheckin" | "gallery" | "guests";
+/** Capability-bearing purchasable add-on ids (doc 17 §4). `express` is deliberately NOT one.
+ * `seating` = Seating Plan (doc 21 §5.0 D5): binary, like `qrcheckin`. */
+export type AddonId = "domain" | "qrcheckin" | "gallery" | "guests" | "seating";
 /** Per-invitation purchased add-ons: `{ [addonId]: quantity }`, persisted in
  * `invitations.purchased_addons` (JSON, nullable). Binary add-ons are always quantity 1. */
 export type PurchasedAddons = Partial<Record<AddonId, number>>;
@@ -64,8 +68,10 @@ export declare function getEffectivePhotoCap(tier: PackageTier, override?: numbe
  * Menambahkan plafon buatan di sini hanya akan menolak uang pelanggan tanpa alasan teknis.
  */
 export declare function getEffectiveGuestCap(tier: PackageTier, override?: number | null, addons?: PurchasedAddons | null): number;
+/** Binary features and the add-on that grants each. */
+export type BinaryFeature = "qrCheckin" | "customDomain" | "seating";
 /** Whether an invitation has a binary feature: the tier grants it (never today) OR it was purchased. */
-export declare function hasFeature(tier: PackageTier, feature: "qrCheckin" | "customDomain", addons?: PurchasedAddons | null): boolean;
+export declare function hasFeature(tier: PackageTier, feature: BinaryFeature, addons?: PurchasedAddons | null): boolean;
 /** Everything an invitation is actually entitled to: tier defaults + purchased add-ons + staff override. */
 export declare function getEffectiveCapabilities(tier: PackageTier, addons?: PurchasedAddons | null, photoCapOverride?: number | null, guestCapOverride?: number | null): TierCapabilities;
 /** Computes `invitations.expires_at` at publish time. Pure — no D1 access. The `null` branch is

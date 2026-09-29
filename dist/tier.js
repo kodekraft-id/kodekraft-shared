@@ -19,9 +19,9 @@ const PREMIUM_DURATION_MONTHS = 6;
  * v0.4.0 VALUE CHANGE: qrCheckin/customDomain are false at every tier (add-ons only);
  * durations are basic 3 / premium 6 / exclusive 12 (no tier is "never expires"). */
 export const TIER_CAPABILITIES = Object.freeze({
-    basic: { photoCap: 5, guestCap: 250, qrCheckin: false, customDomain: false, durationMonths: 3 },
-    premium: { photoCap: 15, guestCap: 500, qrCheckin: false, customDomain: false, durationMonths: PREMIUM_DURATION_MONTHS },
-    exclusive: { photoCap: 50, guestCap: 1000, qrCheckin: false, customDomain: false, durationMonths: 12 },
+    basic: { photoCap: 5, guestCap: 250, qrCheckin: false, customDomain: false, seating: false, durationMonths: 3 },
+    premium: { photoCap: 15, guestCap: 500, qrCheckin: false, customDomain: false, seating: false, durationMonths: PREMIUM_DURATION_MONTHS },
+    exclusive: { photoCap: 50, guestCap: 1000, qrCheckin: false, customDomain: false, seating: false, durationMonths: 12 },
 });
 // Personal guest links (`guests.token`, the `?to=` mechanism) are deliberately NOT modeled
 // in this map: every tier has them, unconditionally (confirmed 2026-09-17). Do not add a
@@ -32,8 +32,8 @@ export const TIER_CAPABILITIES = Object.freeze({
 //
 // Templates are tier-agnostic by product decision (2026-09-17): this map is keyed ONLY by
 // tier, never by template key. No `templates.min_tier` column exists or should be added.
-const ADDON_IDS = ["domain", "qrcheckin", "gallery", "guests"];
-const BINARY_ADDON_IDS = new Set(["domain", "qrcheckin"]);
+const ADDON_IDS = ["domain", "qrcheckin", "gallery", "guests", "seating"];
+const BINARY_ADDON_IDS = new Set(["domain", "qrcheckin", "seating"]);
 function isAddonId(value) {
     return typeof value === "string" && ADDON_IDS.includes(value);
 }
@@ -119,12 +119,16 @@ export function getEffectiveGuestCap(tier, override, addons) {
     const tierCap = TIER_CAPABILITIES[tier].guestCap;
     return tierCap + GUESTS_ADDON_GUESTS * (addons?.guests ?? 0);
 }
+const FEATURE_ADDON = Object.freeze({
+    qrCheckin: "qrcheckin",
+    customDomain: "domain",
+    seating: "seating",
+});
 /** Whether an invitation has a binary feature: the tier grants it (never today) OR it was purchased. */
 export function hasFeature(tier, feature, addons) {
     if (TIER_CAPABILITIES[tier][feature])
         return true;
-    const addonId = feature === "qrCheckin" ? "qrcheckin" : "domain";
-    return (addons?.[addonId] ?? 0) >= 1;
+    return (addons?.[FEATURE_ADDON[feature]] ?? 0) >= 1;
 }
 /** Everything an invitation is actually entitled to: tier defaults + purchased add-ons + staff override. */
 export function getEffectiveCapabilities(tier, addons, photoCapOverride, guestCapOverride) {
@@ -133,6 +137,7 @@ export function getEffectiveCapabilities(tier, addons, photoCapOverride, guestCa
         guestCap: getEffectiveGuestCap(tier, guestCapOverride, addons),
         qrCheckin: hasFeature(tier, "qrCheckin", addons),
         customDomain: hasFeature(tier, "customDomain", addons),
+        seating: hasFeature(tier, "seating", addons),
         durationMonths: TIER_CAPABILITIES[tier].durationMonths,
     };
 }
