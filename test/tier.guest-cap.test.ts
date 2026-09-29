@@ -13,7 +13,7 @@ import {
   getEffectiveGuestCap,
   parsePurchasedAddons,
   type PackageTier,
-} from "../src/tier";
+} from "../src/tier.js";
 
 const TIERS: PackageTier[] = ["basic", "premium", "exclusive"];
 
