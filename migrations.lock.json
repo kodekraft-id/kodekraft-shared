@@ -28,5 +28,6 @@
   "0027_client_email_collation.sql": "947e19818a6f54863eca691ed9c8c72fc0addaef0ac69e69b22b482a8875c794",
   "0028_enum_guards.sql": "b5a593d632444e04df68aac289830f350b8b1c0c49ca1526e76e2b8ed8a8d35b",
   "0029_orders_kind.sql": "5a109f27efee7f2b1ef39a4fa414fe5de78ce90c1854f9c6494f359053804da9",
-  "0030_group_links_import_seating.sql": "5e5c98a38fab7a7b52e321d20815b6ca26686436cd26ad075ab4aa2fbae4c336"
+  "0030_group_links_import_seating.sql": "5e5c98a38fab7a7b52e321d20815b6ca26686436cd26ad075ab4aa2fbae4c336",
+  "0031_usher_sessions.sql": "8a6ef073df2e456aacd57969f70d40fb2a221469eb5f70817e437ee8c6d1475b"
 }

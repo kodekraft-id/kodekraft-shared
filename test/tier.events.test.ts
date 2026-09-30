@@ -8,6 +8,7 @@ import {
   TIER_CAPABILITIES,
   computeExpiresAtFromEvents,
   isCheckinWindowOpen,
+  lastCheckinWindowEnd,
   type PackageTier,
 } from "../src/tier.js";
 
@@ -285,5 +286,37 @@ describe("isCheckinWindowOpen", () => {
     const longPast = [{ start_at: "2000-01-01T00:00:00Z", end_at: "2000-01-01T01:00:00Z" }];
     expect(() => isCheckinWindowOpen(longPast)).not.toThrow();
     expect(isCheckinWindowOpen(longPast)).toBe(false);
+  });
+});
+
+describe("lastCheckinWindowEnd (BE-mono-36, Dashboard Resepsionis session end)", () => {
+  it("latest effective end across events that can open a window", () => {
+    const events = [
+      { start_at: "2026-10-10T02:00:00.000Z", end_at: "2026-10-10T05:00:00.000Z" },
+      { start_at: "2026-10-11T08:00:00.000Z" }, // no end_at -> 23:59:59.999 WIB that day
+      { start_at: "2026-10-09T02:00:00.000Z", end_at: "2026-10-09T04:00:00.000Z" },
+    ];
+    expect(lastCheckinWindowEnd(events)?.toISOString()).toBe("2026-10-11T16:59:59.999Z");
+  });
+
+  it("an event without start_at never opens a window, so its end is ignored", () => {
+    const events = [
+      { start_at: "2026-10-10T02:00:00.000Z", end_at: "2026-10-10T05:00:00.000Z" },
+      { end_at: "2026-12-31T00:00:00.000Z" },
+    ];
+    expect(lastCheckinWindowEnd(events)?.toISOString()).toBe("2026-10-10T05:00:00.000Z");
+  });
+
+  it("null when no event can open a window", () => {
+    expect(lastCheckinWindowEnd(null)).toBeNull();
+    expect(lastCheckinWindowEnd([])).toBeNull();
+    expect(lastCheckinWindowEnd([{ end_at: "2026-12-31T00:00:00.000Z" }, { start_at: "bukan tanggal" }])).toBeNull();
+  });
+
+  it("agrees with isCheckinWindowOpen at the boundary: open at the end, closed 1 ms later", () => {
+    const events = [{ start_at: "2026-10-10T02:00:00.000Z", end_at: "2026-10-10T05:00:00.000Z" }];
+    const end = lastCheckinWindowEnd(events)!;
+    expect(isCheckinWindowOpen(events, { now: end })).toBe(true);
+    expect(isCheckinWindowOpen(events, { now: new Date(end.getTime() + 1) })).toBe(false);
   });
 });

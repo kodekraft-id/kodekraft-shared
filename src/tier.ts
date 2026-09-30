@@ -480,6 +480,26 @@ export interface CheckinWindowOptions {
 }
 
 /**
+ * When the LAST check-in window closes: the latest effective end (see {@link effectiveEventEndMs})
+ * among the events that can open a window at all — those with a usable `start_at`, the same
+ * events {@link isCheckinWindowOpen} considers. `null` when no event can open a window.
+ *
+ * Added for the Dashboard Resepsionis (BE-mono-36, doc 22 R2): a receptionist's phone stays
+ * signed in until this moment. Exported from here, not recomputed in worker-user, so the session
+ * end and the window rule can never disagree about when check-in is over.
+ */
+export function lastCheckinWindowEnd(events: readonly EventWindow[] | null | undefined): Date | null {
+  if (!events) return null;
+  let latestMs: number | null = null;
+  for (const event of events) {
+    if (parseTimestampMs(event?.start_at) === null) continue;
+    const endMs = effectiveEventEndMs(event);
+    if (endMs !== null && (latestMs === null || endMs > latestMs)) latestMs = endMs;
+  }
+  return latestMs === null ? null : new Date(latestMs);
+}
+
+/**
  * Whether a QR check-in scanner may accept scans right now: `now` falls within
  * `[start_at - bufferMinutes, effective end]` of ANY event in `events` (same effective-end rule as
  * {@link computeExpiresAtFromEvents}), boundaries inclusive. `testMode: true` always returns

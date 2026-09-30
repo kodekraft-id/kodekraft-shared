@@ -16,7 +16,7 @@ consuming repo for how this matrix is enforced against real code.
 | `events` | `schema/content.ts` | worker-user | worker-undangan, worker-admin |
 | `gift_accounts` | `schema/content.ts` | worker-user | worker-undangan |
 | `gifts` | `schema/submissions.ts` | worker-undangan; worker-user | worker-admin |
-| `group_attendees` | `schema/guests.ts` | worker-undangan (id, invitation_id, guest_id, name, pax, rsvp_status, source, device_key, created_at, updated_at); worker-user (id, invitation_id, guest_id, name, pax, source, checked_in_at, checked_in_is_test, created_at, updated_at) | — |
+| `group_attendees` | `schema/guests.ts` | worker-undangan (id, invitation_id, guest_id, name, pax, rsvp_status, source, device_key, created_at, updated_at); worker-user (id, invitation_id, guest_id, name, pax, source, checked_in_at, checked_in_is_test, checked_in_by, created_at, updated_at) | — |
 | `guest_import_chunks` | `schema/guests.ts` | worker-user | — |
 | `guest_imports` | `schema/guests.ts` | worker-user | — |
 | `guests` | `schema/guests.ts` | worker-user (id, invitation_id, name, token, group_name, phone, created_at, checked_in_at, checked_in_by, checkin_method, checked_in_is_test, updated_at, kind, capacity); worker-undangan (opened_at, opened_count) | worker-landing |
@@ -34,5 +34,7 @@ consuming repo for how this matrix is enforced against real code.
 | `story_items` | `schema/content.ts` | worker-user | worker-undangan |
 | `templates` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
 | `testimonials` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
+| `usher_pin_failures` | `schema/usher.ts` | worker-user | — |
+| `usher_sessions` | `schema/usher.ts` | worker-user | — |
 | `wa_templates` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
 | `wishes` | `schema/submissions.ts` | worker-undangan; worker-user | worker-admin |
