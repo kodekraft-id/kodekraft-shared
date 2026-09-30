@@ -25,7 +25,7 @@
       "readers": [
         "worker-admin"
       ],
-      "note": "PLANNED — not in the live 0001-0012 lineage. Lands as 0015_orders_status_log.sql per doc 12 §6.2. Append-only payment audit trail, owned by worker-landing alongside orders."
+      "note": "BE-mono-37 (2026-09-30, approved by Pram), AUTHORED in 0032_order_status_log.sql — the append-only payment audit trail doc 02 / doc 12 §6.2 planned as 0015 and that was never created until now. One row per step of an order: created, Snap transaction created/failed, every Midtrans notification whose signature is VALID (including order_not_found and amount_mismatch rejections; invalid-signature deliveries are never written, only logged, because anyone can send them), paid, failed, provisioning started/succeeded/failed, top-up applied, buyer notification sent, staff reprovision, activation resent. worker-landing is the only writer and only INSERTs (a BEFORE UPDATE trigger aborts updates); writes are best-effort and never fail the payment path. `order_id` deliberately has no foreign key. `detail` is filtered JSON with no signature, Snap token, buyer email or phone. worker-admin reads it for the order-detail timeline (BE-admin-38)."
     },
     "order_refunds": {
       "module": "schema/orders.ts",
