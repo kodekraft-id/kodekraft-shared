@@ -186,6 +186,43 @@
       ],
       "note": "BE-mono-39 (2026-10-01, doc 26), AUTHORED in 0034_custom_design.sql: the Desain Custom work queue, one row per invitation (UNIQUE invitation_id). worker-landing creates it inside the SAME atomic batch as provisioning or the add-on top-up, so a paid design never lacks its queue row; the status starts at the column default 'received', which is why worker-landing's column list has no status. worker-admin owns everything after that: status, result_template_id (with the invitations.template_id switch in one batch), the Figma PDF archive key, staff notes, timestamps. worker-user reads it to show the owner the status. invitation_id has no foreign key on purpose: the link from a resold template to its consent must outlive the invitation."
     },
+    "staff_access_sessions": {
+      "module": "schema/staff-access.ts",
+      "writers": {
+        "worker-admin": [
+          "id",
+          "client_id",
+          "admin_id",
+          "admin_name",
+          "reason",
+          "token_hash",
+          "created_at",
+          "link_expires_at",
+          "expires_at",
+          "ended_at",
+          "ended_by"
+        ],
+        "worker-user": [
+          "opened_at",
+          "opened_ip",
+          "opened_user_agent",
+          "ended_at",
+          "ended_by"
+        ]
+      },
+      "readers": [],
+      "note": "BE-mono-40 (2026-10-01, doc 27, approved by Pram), AUTHORED in 0035_staff_access.sql: one row per temporary staff access to an owner dashboard (60 minutes, created from the admin panel with a mandatory reason). worker-admin creates the row together with a random 256-bit handoff token of which ONLY the sha256 is stored, and may end it early (ended_by admin). worker-user redeems the token once, within link_expires_at (5 minutes), filling opened_* with a conditional UPDATE, checks the row on every staff-mode request, and ends it when the staff member leaves (ended_by staff). Neither app writes the other half: the dashboard never creates or extends access, the admin panel never marks one opened. Triggers make the identity columns immutable, opened_* and ended_* write-once, and DELETE impossible, so the history the owner and Pram read cannot be rewritten by either app. client_id and admin_id have no foreign key on purpose: the record must outlive deletion of the account or the staff login."
+    },
+    "staff_access_actions": {
+      "module": "schema/staff-access.ts",
+      "writers": {
+        "worker-user": "*"
+      },
+      "readers": [
+        "worker-admin"
+      ],
+      "note": "BE-mono-40 (2026-10-01, doc 27), AUTHORED in 0035_staff_access.sql: one row per mutating request (POST/PUT/PATCH/DELETE) a staff member sent to the dashboard API during a staff access session, with the path (no query string) and the response status. Request bodies are NOT stored. worker-user is the only writer and only INSERTs (triggers abort UPDATE and DELETE); the owner sees it summarised per dashboard area (Mempelai, Acara, Tamu, ...), worker-admin reads it for the full per-request audit."
+    },
     "sections": {
       "module": "schema/sections.ts",
       "writers": {

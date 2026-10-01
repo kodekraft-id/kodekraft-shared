@@ -34,6 +34,8 @@ consuming repo for how this matrix is enforced against real code.
 | `seating_assignments` | `schema/seating.ts` | worker-user | — |
 | `seating_tables` | `schema/seating.ts` | worker-user | — |
 | `sections` | `schema/sections.ts` | worker-landing; worker-user; worker-admin | worker-undangan |
+| `staff_access_actions` | `schema/staff-access.ts` | worker-user | worker-admin |
+| `staff_access_sessions` | `schema/staff-access.ts` | worker-admin (id, client_id, admin_id, admin_name, reason, token_hash, created_at, link_expires_at, expires_at, ended_at, ended_by); worker-user (opened_at, opened_ip, opened_user_agent, ended_at, ended_by) | — |
 | `story_items` | `schema/content.ts` | worker-user | worker-undangan |
 | `templates` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
 | `testimonials` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
