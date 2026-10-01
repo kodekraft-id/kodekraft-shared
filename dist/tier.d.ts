@@ -19,8 +19,10 @@ export interface TierCapabilities {
     durationMonths: number | null;
 }
 /** Capability-bearing purchasable add-on ids (doc 17 §4). `express` is deliberately NOT one.
- * `seating` = Seating Plan (doc 21 §5.0 D5): binary, like `qrcheckin`. */
-export type AddonId = "domain" | "qrcheckin" | "gallery" | "guests" | "seating";
+ * `seating` = Seating Plan (doc 21 §5.0 D5): binary, like `qrcheckin`.
+ * `design` = Desain Custom (doc 26): binary, an entitlement to ONE custom template for the invitation. It gates
+ * no feature (no `BinaryFeature`), but recording it here is what stops a second purchase and shows it as owned. */
+export type AddonId = "domain" | "qrcheckin" | "gallery" | "guests" | "seating" | "design";
 /** Per-invitation purchased add-ons: `{ [addonId]: quantity }`, persisted in
  * `invitations.purchased_addons` (JSON, nullable). Binary add-ons are always quantity 1. */
 export type PurchasedAddons = Partial<Record<AddonId, number>>;

@@ -6,3 +6,12 @@
 declare const console: {
   error(...args: unknown[]): void;
 };
+
+// design.ts hashes the consent text with Web Crypto, which every runtime of this package has (Workers,
+// browsers, Node >= 20). Declared as narrowly as the one call needs, same reasoning as `console` above.
+declare const crypto: {
+  subtle: { digest(algorithm: "SHA-256", data: Uint8Array): Promise<ArrayBuffer> };
+};
+declare class TextEncoder {
+  encode(input?: string): Uint8Array;
+}

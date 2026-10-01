@@ -134,6 +134,14 @@ describe("parsePurchasedAddons", () => {
     expect(parsePurchasedAddons(["seating", "express"])).toEqual({ seating: 1 });
   });
 
+  it("reads the design add-on (Desain Custom, doc 26) as binary and grants no feature", () => {
+    expect(parsePurchasedAddons({ design: 2 })).toEqual({ design: 1 });
+    expect(parsePurchasedAddons('{"design":1,"gallery":1}')).toEqual({ design: 1, gallery: 1 });
+    expect(getEffectiveCapabilities("basic", parsePurchasedAddons({ design: 1 }))).toEqual(
+      getEffectiveCapabilities("basic", {}),
+    );
+  });
+
   it("does not read inherited keys and does not pollute prototypes", () => {
     expect(parsePurchasedAddons(JSON.parse('{"__proto__":{"gallery":5}}'))).toEqual({});
     expect(parsePurchasedAddons(Object.create({ gallery: 3 }))).toEqual({});

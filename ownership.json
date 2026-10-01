@@ -155,6 +155,37 @@
       ],
       "note": "BE-mono-38 (2026-10-01, doc 25, approved by Pram), AUTHORED in 0033_invitation_style_versions.sql: staff-only appearance overrides for ONE invitation, set from the admin panel without a deploy (text scale, accent color, custom CSS). One row per saved version; the effective style is the highest version of an invitation. INSERT only (a BEFORE UPDATE trigger aborts updates), so the table is also the change history: restoring an old version inserts a copy with restored_from. Deliberately not in invitations.settings, which worker-user also writes from the owner dashboard. custom_css is checked by @kodekraft/shared/style before it is saved (worker-admin) and again before it is rendered (worker-undangan), and is only applied while the invitation still uses template_id. worker-admin also bumps invitations.updated_at in the same batch, so worker-undangan's (id, updated_at) content cache picks the new style up on the next page open."
     },
+    "design_consents": {
+      "module": "schema/design.ts",
+      "writers": {
+        "worker-landing": "*"
+      },
+      "readers": [
+        "worker-admin",
+        "worker-user"
+      ],
+      "note": "BE-mono-39 (2026-10-01, doc 26, approved by Pram), AUTHORED in 0034_custom_design.sql: proof that a buyer accepted the Desain Custom resale terms, one row per submitted checkbox. worker-landing INSERTS it at checkout BEFORE the order row is created (so no order carries a design line without its proof) and when an owner buys the add-on from the dashboard (RPC from worker-user, which forwards the browser's IP and User-Agent). Triggers abort every UPDATE and DELETE, and the table has no foreign keys, so the proof survives deletion of the order, invitation or account. terms_text is stored verbatim with its sha256; worker-admin re-hashes it against @kodekraft/shared/design to show integrity, worker-user reads the version and time to show the owner their copy. '*' for worker-landing is insert-only by intent; the triggers, not the matrix, make it so."
+    },
+    "design_requests": {
+      "module": "schema/design.ts",
+      "writers": {
+        "worker-landing": [
+          "id",
+          "invitation_id",
+          "order_id",
+          "consent_id",
+          "figma_url",
+          "base_template_id",
+          "created_at",
+          "updated_at"
+        ],
+        "worker-admin": "*"
+      },
+      "readers": [
+        "worker-user"
+      ],
+      "note": "BE-mono-39 (2026-10-01, doc 26), AUTHORED in 0034_custom_design.sql: the Desain Custom work queue, one row per invitation (UNIQUE invitation_id). worker-landing creates it inside the SAME atomic batch as provisioning or the add-on top-up, so a paid design never lacks its queue row; the status starts at the column default 'received', which is why worker-landing's column list has no status. worker-admin owns everything after that: status, result_template_id (with the invitations.template_id switch in one batch), the Figma PDF archive key, staff notes, timestamps. worker-user reads it to show the owner the status. invitation_id has no foreign key on purpose: the link from a resold template to its consent must outlive the invitation."
+    },
     "sections": {
       "module": "schema/sections.ts",
       "writers": {

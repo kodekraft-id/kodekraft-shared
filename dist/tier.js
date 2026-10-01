@@ -32,8 +32,8 @@ export const TIER_CAPABILITIES = Object.freeze({
 //
 // Templates are tier-agnostic by product decision (2026-09-17): this map is keyed ONLY by
 // tier, never by template key. No `templates.min_tier` column exists or should be added.
-const ADDON_IDS = ["domain", "qrcheckin", "gallery", "guests", "seating"];
-const BINARY_ADDON_IDS = new Set(["domain", "qrcheckin", "seating"]);
+const ADDON_IDS = ["domain", "qrcheckin", "gallery", "guests", "seating", "design"];
+const BINARY_ADDON_IDS = new Set(["domain", "qrcheckin", "seating", "design"]);
 function isAddonId(value) {
     return typeof value === "string" && ADDON_IDS.includes(value);
 }

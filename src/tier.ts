@@ -27,8 +27,10 @@ export interface TierCapabilities {
 }
 
 /** Capability-bearing purchasable add-on ids (doc 17 §4). `express` is deliberately NOT one.
- * `seating` = Seating Plan (doc 21 §5.0 D5): binary, like `qrcheckin`. */
-export type AddonId = "domain" | "qrcheckin" | "gallery" | "guests" | "seating";
+ * `seating` = Seating Plan (doc 21 §5.0 D5): binary, like `qrcheckin`.
+ * `design` = Desain Custom (doc 26): binary, an entitlement to ONE custom template for the invitation. It gates
+ * no feature (no `BinaryFeature`), but recording it here is what stops a second purchase and shows it as owned. */
+export type AddonId = "domain" | "qrcheckin" | "gallery" | "guests" | "seating" | "design";
 
 /** Per-invitation purchased add-ons: `{ [addonId]: quantity }`, persisted in
  * `invitations.purchased_addons` (JSON, nullable). Binary add-ons are always quantity 1. */
@@ -70,8 +72,8 @@ export const TIER_CAPABILITIES: Readonly<Record<PackageTier, TierCapabilities>> 
 // Templates are tier-agnostic by product decision (2026-09-17): this map is keyed ONLY by
 // tier, never by template key. No `templates.min_tier` column exists or should be added.
 
-const ADDON_IDS: readonly AddonId[] = ["domain", "qrcheckin", "gallery", "guests", "seating"];
-const BINARY_ADDON_IDS: ReadonlySet<AddonId> = new Set<AddonId>(["domain", "qrcheckin", "seating"]);
+const ADDON_IDS: readonly AddonId[] = ["domain", "qrcheckin", "gallery", "guests", "seating", "design"];
+const BINARY_ADDON_IDS: ReadonlySet<AddonId> = new Set<AddonId>(["domain", "qrcheckin", "seating", "design"]);
 
 function isAddonId(value: unknown): value is AddonId {
   return typeof value === "string" && (ADDON_IDS as readonly string[]).includes(value);
