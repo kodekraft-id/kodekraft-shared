@@ -1,7 +1,7 @@
 {
   "name": "@kodekraft/shared",
-  "version": "0.20.0",
-  "description": "Cross-repo contract package for the 4 invitation-worker-* repos: ownership matrix, D1 write guard, and tier capabilities. Consumed as a git-protocol dependency, not published to npm.",
+  "version": "0.21.0",
+  "description": "Cross-repo contract package for the 4 invitation-worker-* repos: ownership matrix, D1 write guard, tier capabilities, and staff style rules. Consumed as a git-protocol dependency, not published to npm.",
   "private": true,
   "type": "module",
   "license": "UNLICENSED",
@@ -28,6 +28,10 @@
     "./domain-name": {
       "types": "./dist/domain-name.d.ts",
       "import": "./dist/domain-name.js"
+    },
+    "./style": {
+      "types": "./dist/style.d.ts",
+      "import": "./dist/style.js"
     }
   },
   "bin": {

@@ -30,5 +30,6 @@
   "0029_orders_kind.sql": "5a109f27efee7f2b1ef39a4fa414fe5de78ce90c1854f9c6494f359053804da9",
   "0030_group_links_import_seating.sql": "5e5c98a38fab7a7b52e321d20815b6ca26686436cd26ad075ab4aa2fbae4c336",
   "0031_usher_sessions.sql": "8a6ef073df2e456aacd57969f70d40fb2a221469eb5f70817e437ee8c6d1475b",
-  "0032_order_status_log.sql": "ff1d71bd4e64b1e60d34921ca9c91c9f4791c9aac6b2edf342f6486ddcd195a0"
+  "0032_order_status_log.sql": "ff1d71bd4e64b1e60d34921ca9c91c9f4791c9aac6b2edf342f6486ddcd195a0",
+  "0033_invitation_style_versions.sql": "e636b22d589be100cd73b0e3331b801d4682eed034b3ee8910042d706cc4e3e0"
 }
