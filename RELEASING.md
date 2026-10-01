@@ -136,6 +136,12 @@ This package stays on `0.x` for a while on purpose (see below for the `1.0.0` ba
   `./id` or `./tier` landing). This covers both widening and narrowing changes from §2 — the
   minor/patch split is about *what kind of artifact* changed, not about whether the change is
   widening or narrowing.
+- **Minor, too** — a change to an exported *type* that breaks callers at compile time, even when
+  `ownership.json` and the `exports` map stay byte-identical. The case that prompted the rule:
+  `v0.17.0` added a required field to `TierCapabilities`, so every app constructing that type
+  stopped type-checking until it bumped its pin. Treat it like any other minor: the apps that use
+  the type update their code in the same pin bump. (Decided by Pram 2026-10-01, checklist
+  "Keputusan kecil", step 2.)
 - **Patch** (`0.1.0` → `0.1.1`) — implementation-only changes: a bug fix in `guard.ts`'s
   Proxy logic, a `check-ownership.mjs` rule getting a false-positive fix, a `dist/` rebuild
   after a tooling change, a docs-only change — anything where `ownership.json`'s content and
