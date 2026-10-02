@@ -74,9 +74,9 @@ What changed since 2026-09-21:
 
 | What | State |
 |---|---|
-| Remote D1 | `0001`–`0034` applied (Pram applied `0033` and `0034` on 2026-10-01). **`0035_staff_access.sql` is pending.** The code that uses it is already deployed and answers "migration not applied yet" until then (checklist task "Terapkan migrasi 0035"). |
-| `kodekraft-shared` | **`v0.23.0`**, whose `migrations.lock.json` has 35 entries (`0001`–`0035`). Tagged and pushed. |
-| The 4 apps' pins | All four on **`#v0.23.0`**. worker-resepsionis does not depend on this package. |
+| Remote D1 | `0001`–`0035` applied (Pram applied `0033` and `0034` on 2026-10-01, `0035_staff_access.sql` on 2026-10-02). |
+| `kodekraft-shared` | **`v0.24.0`** (2026-10-02, BE-mono-41, landing doc 30): a pure widening — worker-admin may write `clients.token_version` (the staff password reset revokes sessions) and a new `./temp-password` export. `migrations.lock.json` is unchanged at 35 entries (`0001`–`0035`). Tagged and pushed. |
+| The 4 apps' pins | worker-landing, worker-user and worker-admin on **`#v0.24.0`** (each uses the new export or grant, deployed 2026-10-02). worker-undangan stays on **`#v0.23.0`**: a widening release needs no lockstep (RELEASING.md §2) and nothing it reads changed, so it moves on its next ordinary bump. worker-resepsionis does not depend on this package. |
 | Ownership guard mode | **`throw` in all four** since 2026-10-02: worker-landing from its integration, worker-user since 2026-09-24, worker-admin and worker-undangan since 2026-10-02 (Pram's per-repo decision; §6). |
 
 The rows below are the 2026-09-21–24 snapshot this section used to hold, kept as history:
