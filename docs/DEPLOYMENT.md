@@ -77,7 +77,7 @@ What changed since 2026-09-21:
 | Remote D1 | `0001`–`0034` applied (Pram applied `0033` and `0034` on 2026-10-01). **`0035_staff_access.sql` is pending.** The code that uses it is already deployed and answers "migration not applied yet" until then (checklist task "Terapkan migrasi 0035"). |
 | `kodekraft-shared` | **`v0.23.0`**, whose `migrations.lock.json` has 35 entries (`0001`–`0035`). Tagged and pushed. |
 | The 4 apps' pins | All four on **`#v0.23.0`**. worker-resepsionis does not depend on this package. |
-| Ownership guard mode | worker-landing and worker-user **`throw`** (worker-user since 2026-09-24); worker-admin and worker-undangan **`warn`**. Both warn suites pass under `throw` (re-checked 2026-10-02: admin 842/843, undangan 408/409, where the single failure is each repo's own "still ships warn" assertion). Flipping them is a per-repo decision for Pram (§6). |
+| Ownership guard mode | **`throw` in all four** since 2026-10-02: worker-landing from its integration, worker-user since 2026-09-24, worker-admin and worker-undangan since 2026-10-02 (Pram's per-repo decision; §6). |
 
 The rows below are the 2026-09-21–24 snapshot this section used to hold, kept as history:
 
@@ -244,8 +244,11 @@ request) for one full deploy cycle, so real production traffic can be observed f
 `"throw"` (blocks the write). `QA-shared-16` itself — the task that formally signs off on that
 flip, per repo — is ticked. On 2026-09-24 it forced `throw` across every warn repo: worker-user
 failed 30 tests (real out-of-matrix writes, fixed, then flipped), while worker-admin and
-worker-undangan came out clean and **stayed on `warn` by choice**. A clean suite does not prove
-that the paths no test covers obey the matrix, so flipping each is a per-repo decision.
+worker-undangan came out clean and stayed on `warn` by choice. A clean suite does not prove
+that the paths no test covers obey the matrix, so flipping each was a per-repo decision. **Pram
+took it on 2026-10-02** (`invitation-worker-landing/project-docs/12-cross-repo-integration-design.md`
+§10 item 2): both suites passed under a forced `throw` a second time, a 16-minute production
+tail showed no `db.ownership.violation`, and both were flipped and deployed the same morning.
 
 **Confirmed current mode per repo, 2026-10-02 (verify directly in each repo's composition root
 before relying on this table — it will go stale):**
@@ -254,11 +257,15 @@ before relying on this table — it will go stale):**
 |---|---|---|
 | worker-landing | `src/db.ts` | **`"throw"`** (the default; no `mode` option is passed). Deliberate, per that file's header. |
 | worker-user | `src/worker/db/client.ts` | **`"throw"`**, explicit, since 2026-09-24. That file's header records what the flip found. |
-| worker-admin | `src/worker/db/client.ts` | `"warn"`, explicit. Suite under forced `throw` on 2026-10-02: 842/843, where the one failure is its own "still ships warn" assertion. |
-| worker-undangan | `src/db/client.ts` | `"warn"`, explicit. Suite under forced `throw` on 2026-10-02: 408/409, same single expected failure. |
+| worker-admin | `src/worker/db/client.ts` | **`"throw"`**, explicit, since 2026-10-02 (`BE-admin-44`, deployed as version `6d8a7d9d`). |
+| worker-undangan | `src/db/client.ts` | **`"throw"`**, explicit, since 2026-10-02 (`BE-undangan-21`, deployed as version `89bdb5d6`). |
 
-worker-admin and worker-undangan have no `[observability]` block, so a past
-`db.ownership.violation` can't be searched afterwards. Only a live `wrangler tail` sees one.
+Each repo has a test, `qa-shared-16-guard-modes.test.ts`, that pins its shipped mode through
+the repo's own `getDb`. A revert to `warn` fails it, and whoever reverts has to say why there.
+worker-admin and worker-undangan have no `[observability]` block, so a refused write leaves no
+searchable trail. It surfaces as a failed request (RC 99) and in a live `wrangler tail`. If a
+legitimate path ever trips the guard, the fix is a reviewed `ownership.json` change or a code
+fix, never a quiet switch back to `warn`.
 
 **After deploying a repo in `"warn"` mode:** watch its logs for a soak period (several days,
 covering at least one real order → provision → edit cycle):
