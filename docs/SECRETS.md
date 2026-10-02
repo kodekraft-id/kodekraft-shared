@@ -8,11 +8,18 @@ at request time, so check this list on every fresh deploy.
 Derived from each repo's `wrangler.toml`, `.dev.vars.example` and `src/**/bindings.ts`
 (the `Env` interface). If a binding is added, update this file in the same change.
 
+**Re-verified 2026-10-02** against all five repos' `wrangler.toml` and `Env` interfaces and
+against `wrangler secret list` on each deployed Worker (names only). The previous version was
+from before the staff alerts, media CDN, Desain Custom archive, staff access, the
+`*/30` cron and worker-resepsionis existed. It still told you to keep `INTERNAL_KEY` in sync,
+which has been retired since 2026-09-24.
+
 - [Where secrets live](#where-secrets-live)
 - [worker-landing](#worker-landing-kodekraftid)
 - [worker-user](#worker-user-dash-invitationkodekraftid)
 - [worker-admin](#worker-admin-adm-invitationkodekraftid)
 - [worker-undangan](#worker-undangan-invitationkodekraftid)
+- [worker-resepsionis](#worker-resepsionis-resepsionis-invitationkodekraftid)
 - [Shared](#shared)
 - [Getting the Cloudflare-issued values](#getting-the-cloudflare-issued-values)
 - [After every fresh deploy](#after-every-fresh-deploy)
@@ -30,12 +37,15 @@ Rules:
   put obviously fake values or Cloudflare's public test values in `.dev.vars.example`.
 - `wrangler secret list` (run in that Worker's repo) shows secret **names only**, never values.
   Use it to check a fresh deploy. To change a value, run `wrangler secret put NAME` again.
-- Secrets are per Worker: setting `INTERNAL_KEY` on landing does nothing for admin. Set it on each.
+- Secrets are per Worker: setting `CF_PURGE_TOKEN` on worker-user does nothing for worker-admin.
+  Set it on each Worker that lists it.
 - Generate random values with:
   `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`
-- `INTERNAL_KEY` must be **byte-identical** in worker-landing and worker-admin (admin sends it as
-  `X-Internal-Key` over the `LANDING` service binding; landing compares it). A mismatch means
-  admin's order reprovision / resend-activation calls are rejected.
+- **`INTERNAL_KEY` is retired** (`OPS-wl-06`, 2026-09-24). worker-admin and worker-user call
+  worker-landing as RPC over a service binding, which has no URL and needs no shared secret.
+  Nothing reads the key any more, but it still exists on worker-landing and worker-admin. Pram
+  deletes it with `wrangler secret delete INTERNAL_KEY` in both repos, and the `INTERNAL_KEY?`
+  field comes out of both `bindings.ts` in the same change. Never set it on a new deploy.
 - `JWT_SECRET` and `REFRESH_TOKEN_SECRET` must differ from each other, and worker-user's pair must
   differ from worker-admin's pair (separate identity tables per app; a shared key would let a token
   from one app be accepted by the other).
@@ -45,33 +55,66 @@ Rules:
 | Secret | Required | If unset |
 |---|---|---|
 | `MIDTRANS_SERVER_KEY` | yes | checkout and webhook signature verification cannot work |
-| `INTERNAL_KEY` | yes, for internal routes | internal routes fail closed and reject every request (`middleware/internal-key.ts`); must equal worker-admin's value |
 | `RESEND_API_KEY` | optional | activation/notification email is skipped |
-| `WA_GATEWAY_TOKEN` | optional | WhatsApp notification is skipped |
+| `WA_GATEWAY_TOKEN` | optional | WhatsApp notification is skipped (buyers and staff alike: the staff alerts below go out through the same Fonnte gateway) |
+| `STAFF_ALERT_WA` | optional | staff WhatsApp destinations, `628…`, comma-separated. Used for the instant "paid but not provisioned" alert (`BE-wl-51`), the `*/30` reminder that worker-admin's cron asks worker-landing to send (`BE-admin-37`), and the "⚡ Pesanan Express" alert (`BE-wl-57`). Unset: nothing is sent. The order history records the alert as `not_configured`, and the order still shows in the admin "Butuh tindakan" queue / Express badge. An Express order paid while this is unset is **not** re-alerted later: the alert is once per order, ever |
+| `STAFF_ALERT_EMAIL` | optional | as `STAFF_ALERT_WA`, by email through Resend. Only works once the sending domain is verified at Resend |
+| `INTERNAL_KEY` | **retired** | nothing reads it; see [Rules](#where-secrets-live). Still present on the live Worker until Pram deletes it |
 
-Non-secret `[vars]` already in `wrangler.toml`: `WA_NUMBER`, `INVITATION_BASE_URL`,
-`BRAND_NAME`, `SITE_BASE_URL`, `DASH_BASE_URL`, `MIDTRANS_IS_PRODUCTION`, `MAIL_FROM`,
-`WA_GATEWAY_URL`. Other bindings: D1 `DB`, four rate-limit namespaces declared in `wrangler.toml`
-(`CHECKOUT_LIMITER` 5101, `WEBHOOK_LIMITER` 5102, `ORDER_STATUS_LIMITER` 5103, `RESEND_LIMITER`
-5104; no secret needed, and optional in code so an absent binding only skips rate limiting).
-Note: `MIDTRANS_IS_PRODUCTION` must be flipped to `"true"` deliberately for production; the key
-type must match (`SB-Mid-server-...` sandbox vs `Mid-server-...` production).
+As of 2026-10-02 the live Worker holds `MIDTRANS_SERVER_KEY`, `RESEND_API_KEY`,
+`WA_GATEWAY_TOKEN` and the retired `INTERNAL_KEY`. Neither `STAFF_ALERT_*` secret is set yet
+(checklist task "Pasang nomor WA staf").
+
+Non-secret `[vars]` in `wrangler.toml`: `WA_NUMBER` (the storefront's WhatsApp buttons;
+**still the placeholder `6281234567890`** until Pram supplies the real business number),
+`INVITATION_BASE_URL`, `BRAND_NAME`, `SITE_BASE_URL`, `DASH_BASE_URL`, `ADMIN_BASE_URL` (links
+inside staff alerts), `MIDTRANS_IS_PRODUCTION`, `MAIL_FROM`, `WA_GATEWAY_URL`.
+
+Other settings and bindings:
+
+- D1 `DB`, plus four rate-limit namespaces: `CHECKOUT_LIMITER` 5101 (10/min),
+  `WEBHOOK_LIMITER` 5102 (300/min), `ORDER_STATUS_LIMITER` 5103 (40/min) and
+  `RESEND_LIMITER` 5104 (5/min). They need no secret and are optional in code, so an absent
+  binding only skips rate limiting.
+- `workers_dev = true`. Midtrans' notification URL points at
+  `https://worker-landing.pramesty-jaya.workers.dev/api/webhook/midtrans`, which lies outside the
+  `kodekraft.id` zone and so outside Bot Fight Mode, which challenged Midtrans' server-to-server
+  POSTs on 2026-09-29. Removing this line breaks the webhook.
+- `[observability]` is on, so Workers Logs keeps every request's log for the plan's retention.
+- worker-landing exposes RPC methods that worker-admin and worker-user call over their `LANDING`
+  service bindings (`src/internal-rpc.ts`). Deploy worker-landing **before** either of them
+  whenever that surface changes.
+
+`MIDTRANS_IS_PRODUCTION` must be flipped to `"true"` deliberately for production, and the key
+type must match (`SB-Mid-server-...` for sandbox, `Mid-server-...` for production).
 
 ## worker-user (`dash-invitation.kodekraft.id`)
 
 | Secret | Required | If unset |
 |---|---|---|
-| `JWT_SECRET` | yes | access-token signing/verification cannot work |
+| `JWT_SECRET` | yes | access-token signing/verification cannot work, including the 60-minute staff-access tokens (doc 27), which are signed with the same key plus a `sas` claim |
 | `REFRESH_TOKEN_SECRET` | yes | refresh-token flow cannot work |
+| `CF_PURGE_TOKEN` | optional | when an owner deletes a photo, its copy in the `media-invitation.kodekraft.id` cache is not purged (the skip is logged), so the deleted photo can stay reachable from cache. See [section 4](#4-cf_purge_token-and-cf_zone_id-worker-user-and-worker-admin-media-cache-purge) |
+
+As of 2026-10-02 the live Worker holds all three.
 
 Use different values for `JWT_SECRET` and `REFRESH_TOKEN_SECRET`, and different values from
 worker-admin's (see "Where secrets live"). Non-secret `[vars]`: `JWT_EXPIRES_IN_SEC`,
-`REFRESH_EXPIRES_IN_SEC`, `PUBLIC_INVITATION_BASE_URL`, `CORS_ALLOWED_ORIGINS` (comma-separated
-allowlist, default is the production dashboard origin; the SPA is same-origin so this only matters
-for explicit cross-origin callers). Bindings: D1 `DB`, R2 `MEDIA`, and rate-limit namespaces
-`LOGIN_LIMITER` (5201) and `FORGOT_LIMITER` (5202), declared in `wrangler.toml` and optional in
-code (no secret needed). Rate-limit namespace ids are account-scoped and must stay unique across
-Workers.
+`REFRESH_EXPIRES_IN_SEC`, `PUBLIC_INVITATION_BASE_URL`, `RESEPSIONIS_BASE_URL` (links handed to
+check-in staff), `CORS_ALLOWED_ORIGINS` (comma-separated allowlist, default is the production
+dashboard origin; the SPA is same-origin so this only matters for explicit cross-origin callers),
+`CF_ZONE_ID` (zone id of `kodekraft.id`, an identifier rather than a credential) and
+`MEDIA_BASE_URL` (`https://media-invitation.kodekraft.id`, used to build the URLs to purge).
+
+Bindings: D1 `DB`, R2 `MEDIA`, rate-limit namespaces `LOGIN_LIMITER` (5201, 10/min) and
+`FORGOT_LIMITER` (5202, 5/min), declared in `wrangler.toml` and optional in code (no secret
+needed), and the service binding `LANDING` -> `worker-landing`. That binding is used as RPC for
+one thing only: buying an add-on from the dashboard. The money stays with worker-landing, so
+this Worker never holds a Midtrans key. Rate-limit namespace ids are account-scoped and must stay
+unique across Workers.
+
+worker-user also **exposes** the RPC entrypoint `ResepsionisRpc`, which worker-resepsionis
+binds to. Deploy worker-user before worker-resepsionis whenever that surface changes.
 
 ## worker-admin (`adm-invitation.kodekraft.id`)
 
@@ -79,9 +122,13 @@ Workers.
 |---|---|---|
 | `JWT_SECRET` | yes | as worker-user |
 | `REFRESH_TOKEN_SECRET` | yes | as worker-user |
-| `INTERNAL_KEY` | yes | calls to worker-landing over the `LANDING` service binding (order reprovision, resend activation) are rejected; must equal landing's value |
 | `CF_API_TOKEN` | only for custom domains | domain Verifikasi / Aktifkan / Hapus fail closed with RC 99; everything else works |
-| `CF_ANALYTICS_API_TOKEN` | only for usage monitoring | the daily usage-monitoring cron logs `usage_monitoring.skipped` and returns without calling Cloudflare — **you get no free-tier ceiling alerts at all**; nothing else is affected |
+| `CF_ANALYTICS_API_TOKEN` | for usage monitoring and Statistik Traffic | the daily usage-monitoring cron logs `usage_monitoring.skipped` and returns without calling Cloudflare — **you get no free-tier ceiling alerts at all** — and the Statistik Traffic page shows its Cloudflare part as "belum terhubung" (its D1 numbers still show) |
+| `CF_ACCOUNT_ID` | with `CF_ANALYTICS_API_TOKEN` | as `CF_ANALYTICS_API_TOKEN`: either one missing skips the cron. An identifier, not a credential, so `[vars]` is fine too, but production has it as a **secret** (since 2026-09-23). Keep it in exactly one of the two places |
+| `CF_PURGE_TOKEN` | optional | objects the media-retention cron deletes from R2 stay in the `media-invitation.kodekraft.id` cache until it expires (the skip is logged as `media_cache.purge_skipped`) |
+| `INTERNAL_KEY` | **retired** | nothing reads it; see [Rules](#where-secrets-live). Still present on the live Worker until Pram deletes it |
+
+As of 2026-10-02 the live Worker holds all of the above, including the retired `INTERNAL_KEY`.
 
 `CF_API_TOKEN` is a Cloudflare API token with exactly `Zone:Zone:Read` and
 `Zone:Workers Routes:Edit` (see "Getting the Cloudflare-issued values"). Never a Global API Key.
@@ -92,41 +139,92 @@ edit Workers routes. Pointing both secrets at one token works if you would rathe
 only one; the split is a precaution, not a requirement.
 
 Non-secret `[vars]`: `JWT_EXPIRES_IN_SEC`, `REFRESH_EXPIRES_IN_SEC`, `PUBLIC_INVITATION_BASE_URL`
-(unused by admin, kept so shared types compile), `UNDANGAN_WORKER_NAME` (script name that
-custom-domain routes point at; `worker-undangan`). Bindings: D1 `DB`, R2 `MEDIA`, service binding
-`LANDING` -> `worker-landing` (deploy worker-landing first so the binding can resolve).
+(unused by admin, kept so shared types compile), `DASHBOARD_BASE_URL` (base of the one-time
+staff-access links, doc 27), `UNDANGAN_WORKER_NAME` (script name that custom-domain routes point
+at; `worker-undangan`), `CF_ZONE_ID` and `MEDIA_BASE_URL` (as worker-user, for the purge).
 
-worker-admin is the only Worker with `[triggers]`: two daily crons, `0 3 * * *` (media
-retention) and `0 23 * * *` (usage monitoring). Two `[vars]` control them, and **both are
-deliberately left unset in `wrangler.toml`**, so a fresh deploy starts in the safe state:
+Bindings:
+
+- D1 `DB` and R2 `MEDIA` (`undangan-media`).
+- R2 `ARSIP` -> `undangan-arsip`, the private Desain Custom PDF archive. The bucket must exist
+  **before** a deploy, which fails on a binding to a missing bucket.
+- Service binding `LANDING` -> `worker-landing`, used as RPC for order reprovision, resend
+  activation and the staff reminder. Deploy worker-landing first so the binding can resolve.
+
+worker-admin is the only Worker with `[triggers]`, three of the account's five free cron
+triggers:
+
+- `0 3 * * *`: media retention.
+- `0 23 * * *`: usage monitoring.
+- `*/30 * * * *`: staff reminder for paid orders stuck more than 10 minutes, one reminder each.
+  worker-landing sends it, so its destinations are worker-landing's `STAFF_ALERT_*`.
+
+Two optional `[vars]` are **deliberately left out of `wrangler.toml`**, so a fresh deploy starts
+in the safe state:
 
 | Var | Unset (default) | Set it to |
 |---|---|---|
-| `CF_ACCOUNT_ID` | usage-monitoring cron skips every run — no usage history, no alerts | your Cloudflare account id. Not a secret (an identifier, not a credential), so it belongs in `wrangler.toml` `[vars]`, not `wrangler secret put`. Needed together with `CF_ANALYTICS_API_TOKEN`; either one missing skips the run |
 | `MEDIA_RETENTION_MODE` | media-retention cron runs **dry** — logs the R2 objects it would delete, deletes nothing | `"enabled"`, and only after reading a few nights of dry-run logs and agreeing with what they list. This cron permanently deletes R2 objects; there is no undo |
+| `WORKERS_PLAN` | Statistik Traffic measures against the Workers **Free** limit (100,000 requests/day) | `"paid"` after upgrading to Workers Paid |
 
-Leaving both unset is a valid first deploy: the Worker serves traffic normally, one cron is
-inert and the other only logs.
+Leaving both unset is a valid first deploy: the Worker serves traffic normally, and the
+retention cron only logs.
 
 ## worker-undangan (`invitation.kodekraft.id`)
 
+**The Turnstile gate is switched off** (`TURNSTILE_ENABLED = "false"` in `[vars]`, Pram's call on
+2026-09-25 after a broken widget blocked real guests). With the gate off, neither Turnstile value
+is read. The per-IP `GUEST_LIMITER` (7301, 20 guest POSTs/min) is what protects the shared D1
+write quota. It is not a bot filter.
+
 | Secret | Required | If unset |
 |---|---|---|
-| `TURNSTILE_SECRET` | yes | **fail closed**: every guest RSVP / wish / gift submission is rejected |
+| `TURNSTILE_SECRET` | only while the gate is on | gate on: **fail closed**, every guest RSVP / wish / gift submission is rejected |
+| `TURNSTILE_SITE_KEY` | only while the gate is on | gate on: the widget is not rendered while the backend still demands a token, so guests cannot submit either. Public, so `[vars]` works too; production has it as a secret. Keep it in exactly one place |
 
-Non-secret var: `TURNSTILE_SITE_KEY` (public, safe to commit). In `wrangler.toml` the `[vars]` block
-is currently commented out: uncomment it and fill in the site key before deploying. If it is empty
-the widget is not rendered while the backend still demands a token, so guests cannot submit either.
-Bindings: D1 `DB`, R2 `MEDIA`. No rate-limit bindings.
+Both are set on the live Worker as of 2026-10-02, so switching the gate back on is a
+`[vars]` change plus checking the widget's hostname list (section 1).
+
+Non-secret `[vars]`: `TURNSTILE_ENABLED` (absent means **on**, so turning it off has to be a
+written decision), `MEDIA_BASE_URL` (`https://media-invitation.kodekraft.id`: photos and music
+load through the R2 custom domain and its cache. Empty, as in local `.dev.vars`, means the
+Worker's own `/media/*` route, which stays alive for old links). Bindings: D1 `DB`, R2 `MEDIA`,
+rate-limit namespace `GUEST_LIMITER`.
 
 Local dev: `.dev.vars.example` holds Cloudflare's public always-pass test keys (site key
 `1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`); use those only locally.
 Deploy order and smoke test: that repo's `project-docs/09-deployment.md`.
 
+## worker-resepsionis (`resepsionis-invitation.kodekraft.id`)
+
+No secrets (`wrangler secret list` is empty, by design). The Worker has no D1 or R2 binding:
+every read and write goes through the service binding `USER` -> `worker-user`, entrypoint
+`ResepsionisRpc`, so the data rules live in one place. Deploy worker-user first. Other bindings:
+rate-limit namespace `LOGIN_LIMITER` (5301, 10/min) on `POST /api/login`, and static assets
+served as a single-page app.
+
 ## Shared
 
-All four Workers bind the same D1 database `undangan-db` (id in each `wrangler.toml`, not a
-secret). worker-user, worker-admin and worker-undangan share the R2 bucket `undangan-media`.
+Four of the five Workers bind the same D1 database `undangan-db` (id in each `wrangler.toml`, not
+a secret). worker-resepsionis reaches it only through worker-user.
+
+R2 buckets:
+
+- `undangan-media` is shared by worker-user, worker-admin and worker-undangan. Since 2026-10-01
+  its R2 custom domain `media-invitation.kodekraft.id` serves photos and music publicly through
+  the Cloudflare cache (doc 23). That is why deleting media also purges that cache
+  (`CF_PURGE_TOKEN`).
+- `undangan-arsip` belongs to worker-admin only. It has **no** public domain, and files leave it
+  only through the admin panel.
+
+Service bindings, which set the deploy order when an RPC surface changes:
+
+- worker-admin -> worker-landing
+- worker-user -> worker-landing
+- worker-resepsionis -> worker-user
+
+Rate-limit namespace ids are unique per account: 5101–5104 (landing), 5201–5202 (user), 5301
+(resepsionis), 7301 (undangan).
 
 ## Getting the Cloudflare-issued values
 
@@ -163,12 +261,14 @@ runbook).
 
 ### 3. `CF_ANALYTICS_API_TOKEN` and `CF_ACCOUNT_ID` (worker-admin, usage monitoring)
 
-The daily usage cron reads the Cloudflare GraphQL Analytics API to track how close the account is
-to the free-tier ceilings (Workers requests, D1 rows read/written, R2 storage) and warns at 70%.
+The daily usage cron and the Statistik Traffic page read the Cloudflare GraphQL Analytics API to
+track how close the account is to the free-tier ceilings (Workers requests, D1 rows read/written,
+R2 storage). The cron warns at 70%.
 
 1. **Account id**: Cloudflare dashboard -> any zone's **Overview** -> right-hand sidebar,
-   **Account ID**. Copy it into worker-admin's `wrangler.toml` `[vars]` as
-   `CF_ACCOUNT_ID = "..."`. It is not a secret.
+   **Account ID**. Production stores it as a secret (`wrangler secret put CF_ACCOUNT_ID` inside
+   `invitation-worker-admin`). It is not secret, so a `CF_ACCOUNT_ID = "..."` line in `[vars]`
+   works as well. Use one place, not both.
 2. **Token**: **My Profile** -> **API Tokens** -> **Create Token** -> **Create Custom Token**.
 3. Permissions, exactly one: **Account > Account Analytics > Read**. Nothing else — this token
    only ever reads numbers.
@@ -176,11 +276,14 @@ to the free-tier ceilings (Workers requests, D1 rows read/written, R2 storage) a
 5. Create, copy the token (shown once), then run inside `invitation-worker-admin`:
    `wrangler secret put CF_ANALYTICS_API_TOKEN`.
 
-Two caveats worth knowing before you trust the numbers:
+Two things worth knowing before you trust the numbers:
 
-- The GraphQL dataset/field names (`workersInvocationsAdaptive`, `d1AnalyticsAdaptiveGroups`,
-  `r2StorageAdaptiveGroups`) are **unverified against a real account**. If the first runs log
-  `usage_monitoring.analytics_fetch_failed`, the query shape is the first thing to check.
+- The query shape (`workersInvocationsAdaptive` grouped by `scriptName`,
+  `d1AnalyticsAdaptiveGroups` filtered by date, `r2StorageAdaptiveGroups`) is **verified against
+  the real account**: on the Statistik Traffic page on 2026-10-01, and by the cron's first
+  successful snapshot at 23:00 UTC that day. CPU quantiles arrive in **microseconds**, and the
+  code divides by 1000. If a run logs `usage_monitoring.analytics_fetch_failed`, check the token
+  scope first.
 - A token missing `Account Analytics:Read` does **not** produce an HTTP error — Cloudflare
   answers `200` with a top-level `errors` array. worker-admin rejects that as a failed run
   rather than storing a snapshot of zeros, so a mis-scoped token shows up as
@@ -190,6 +293,26 @@ Two caveats worth knowing before you trust the numbers:
 `usage_monitoring.alert_not_delivered` error to the Workers log and stops there: worker-admin has
 no Resend/Fonnte credentials, so no email or WhatsApp is sent to anyone. Until that is wired,
 treat the Workers log (or a log-drain alert on that event name) as the alerting channel.
+
+### 4. `CF_PURGE_TOKEN` and `CF_ZONE_ID` (worker-user and worker-admin, media cache purge)
+
+Photos and music are served from `media-invitation.kodekraft.id` through the Cloudflare cache,
+with long cache lifetimes. Without a purge, a photo an owner deletes stays reachable from the
+edge cache until it expires.
+worker-user purges on owner deletes, and worker-admin purges what the media-retention cron
+deletes.
+
+1. **Zone id**: the `kodekraft.id` zone's **Overview** -> right-hand sidebar, **Zone ID**. It goes
+   in `[vars]` as `CF_ZONE_ID` in both repos (already there). It is an identifier, not a secret.
+2. **Token**: **My Profile** -> **API Tokens** -> **Create Token** -> **Create Custom Token**.
+3. Permissions, exactly one: **Zone > Cache Purge > Purge**.
+4. Zone Resources: **Include > Specific zone > `kodekraft.id`**. Nothing else.
+5. Create, copy the token (shown once), then run `wrangler secret put CF_PURGE_TOKEN` inside
+   **both** `invitation-worker-user` and `invitation-worker-admin`.
+
+Check: delete a test photo from the dashboard, then request its old
+`https://media-invitation.kodekraft.id/inv/...` URL. It must answer `404`, not `200` with
+`cf-cache-status: HIT`. Checklist task `QA-media-01` walks through this.
 
 ## Seeded demo accounts (NOT Worker secrets - database rows)
 
@@ -345,18 +468,27 @@ Run in each Worker's repo unless noted.
 
 - [ ] `wrangler secret list` shows every required secret above for that Worker (names only).
 - [ ] No production row still carries a `seed.sql` password hash (see "Seeded demo accounts").
-- [ ] worker-landing: `MIDTRANS_SERVER_KEY` set and its type matches `MIDTRANS_IS_PRODUCTION`.
-- [ ] `INTERNAL_KEY` set on both worker-landing and worker-admin, same value.
+- [ ] worker-landing: `MIDTRANS_SERVER_KEY` set and its type matches `MIDTRANS_IS_PRODUCTION`;
+      `workers_dev = true` still in `wrangler.toml` and Midtrans' notification URL pointing at the
+      workers.dev address.
+- [ ] worker-landing: `STAFF_ALERT_WA` (and `STAFF_ALERT_EMAIL` if used) set, so stuck-order and
+      Express alerts reach staff; `WA_NUMBER` is the real business number, not the placeholder.
+- [ ] `INTERNAL_KEY` **not** set anywhere (retired; delete it where it still exists).
 - [ ] `JWT_SECRET` / `REFRESH_TOKEN_SECRET` set on user and admin, all four values different.
-- [ ] worker-undangan: `TURNSTILE_SECRET` set, `TURNSTILE_SITE_KEY` uncommented in `[vars]`, and
-      the Turnstile widget lists `invitation.kodekraft.id` plus every custom domain.
-- [ ] worker-admin: `CF_API_TOKEN` set if custom domains are in use; `LANDING` service binding
-      resolves (worker-landing deployed).
-- [ ] worker-admin: `CF_ANALYTICS_API_TOKEN` set and `CF_ACCOUNT_ID` filled in `[vars]` if you
-      want free-tier usage alerts; otherwise accept that the cron skips silently. Check the next
-      day's logs for `usage_monitoring.run_complete` (working) vs `usage_monitoring.skipped`
-      (not configured) vs `usage_monitoring.analytics_fetch_failed` (configured but the query or
-      token scope is wrong).
+- [ ] worker-undangan: `TURNSTILE_ENABLED` matches the decision in force (currently `"false"`). If
+      the gate is on: `TURNSTILE_SECRET` and `TURNSTILE_SITE_KEY` set, and the Turnstile widget
+      lists `invitation.kodekraft.id` plus every custom domain.
+- [ ] Deploy order where an RPC surface changed: worker-landing before worker-admin and
+      worker-user; worker-user before worker-resepsionis.
+- [ ] worker-admin: `CF_API_TOKEN` set if custom domains are in use; the `undangan-arsip` bucket
+      exists before the first deploy (the `ARSIP` binding fails otherwise).
+- [ ] worker-user and worker-admin: `CF_PURGE_TOKEN` set (section 4), so deleted media also
+      leaves the `media-invitation.kodekraft.id` cache.
+- [ ] worker-admin: `CF_ANALYTICS_API_TOKEN` and `CF_ACCOUNT_ID` set if you want free-tier usage
+      alerts and the Statistik Traffic numbers; otherwise accept that the cron skips silently.
+      Check the next day's logs for `usage_monitoring.run_complete` (working) vs
+      `usage_monitoring.skipped` (not configured) vs `usage_monitoring.analytics_fetch_failed`
+      (configured but the token scope is wrong).
 - [ ] worker-admin: `MEDIA_RETENTION_MODE` left **unset** on the first deploy. Read the
       `media_retention.dry_run` logs for a few nights before setting it to `"enabled"` — it
       deletes R2 objects permanently.
