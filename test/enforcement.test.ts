@@ -238,12 +238,23 @@ describe("BE-mono-22: worker-admin provisioning writes", () => {
     expect(() => guarded.prepare(`update "invitations" set "settings" = ?, "updated_at" = ? where "id" = ?`)).not.toThrow();
   });
 
-  it("still rejects clients.token_version / activation_token_hash and invitation content columns", () => {
+  it("still rejects clients.activation_token_hash and invitation content columns", () => {
     const { guarded, prepared } = admin();
-    expect(() => guarded.prepare(`update "clients" set "token_version" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
     expect(() => guarded.prepare(`update "clients" set "activation_token_hash" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
+    expect(() => guarded.prepare(`update "clients" set "activation_expires_at" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
     expect(() => guarded.prepare(`update "invitations" set "story" = ? where "id" = ?`)).toThrow(OwnershipViolationError);
     expect(prepared).toEqual([]);
+  });
+
+  // BE-mono-41 (doc 30): reset password dari panel admin menyimpan password acak DAN menaikkan token_version dalam satu
+  // UPDATE, supaya semua sesi pelanggan keluar saat password lama mati. Sebelumnya (BE-mono-22) token_version ditolak.
+  it("BE-mono-41: allows the staff password reset (password_hash + token_version bump + updated_at in one UPDATE)", () => {
+    const { guarded } = admin();
+    expect(() =>
+      guarded.prepare(
+        `update "clients" set "password_hash" = ?, "token_version" = token_version + 1, "updated_at" = ? where ("clients"."id" = ? and "clients"."deleted_at" is null)`,
+      ),
+    ).not.toThrow();
   });
 
   it("still rejects writes to other apps' tables", () => {

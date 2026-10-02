@@ -12,7 +12,7 @@ consuming repo for how this matrix is enforced against real code.
 |---|---|---|---|
 | `admins` | `schema/admins.ts` | worker-admin | — |
 | `app_settings` | `schema/catalog.ts` | worker-admin | worker-landing, worker-user, worker-undangan |
-| `clients` | `schema/clients.ts` | worker-landing (id, name, email, phone, password_hash, token_version, created_at, activation_token_hash, activation_expires_at, activation_issued_at, activation_resend_count, updated_at); worker-user (password_hash, token_version, name, email, phone, updated_at, activation_token_hash, activation_expires_at); worker-admin (id, name, email, phone, password_hash, created_at, deleted_at, updated_at) | — |
+| `clients` | `schema/clients.ts` | worker-landing (id, name, email, phone, password_hash, token_version, created_at, activation_token_hash, activation_expires_at, activation_issued_at, activation_resend_count, updated_at); worker-user (password_hash, token_version, name, email, phone, updated_at, activation_token_hash, activation_expires_at); worker-admin (id, name, email, phone, password_hash, token_version, created_at, deleted_at, updated_at) | — |
 | `design_consents` | `schema/design.ts` | worker-landing | worker-admin, worker-user |
 | `design_requests` | `schema/design.ts` | worker-landing (id, invitation_id, order_id, consent_id, figma_url, base_template_id, created_at, updated_at); worker-admin | worker-user |
 | `events` | `schema/content.ts` | worker-user | worker-undangan, worker-admin |
