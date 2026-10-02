@@ -14,9 +14,20 @@ package*, `@kodekraft/shared`, not the 4 apps that depend on it) and to `docs/SE
 `invitation-worker-landing/project-docs/16-migration-rollout-plan.md` (migrations, sections
 1–11) and `15-security-ops-runbook.md` (secrets/WAF/rate-limiting ops).
 
-**Last verified: 2026-09-21.** The "Current rollout status" section (§2) is a point-in-time
+**Last verified: 2026-10-02.** The "Current rollout status" section (§2) is a point-in-time
 snapshot and goes stale the moment a migration is applied or a repo is deployed — re-check it
-against the sources cited above before following it blindly on a later date.
+against the sources cited above before following it blindly on a later date. The live record of
+what is applied and deployed is `invitation-worker-landing/project-docs/14-progress-tracker.md`.
+
+What changed since 2026-09-21:
+
+- `INTERNAL_KEY` is retired. worker-admin and worker-user reach worker-landing as RPC over
+  service bindings, so §4's ordering is now about RPC providers going first.
+- A fifth Worker exists, **worker-resepsionis**. It does not consume this package, has no D1 or R2
+  binding, and reaches the data only through worker-user (§4).
+- `wrangler deploy` was granted to the main Claude session on 2026-09-24. `wrangler secret put` /
+  `delete` and every D1 command with `--remote` stay Pram's alone.
+- Workers now keep versions, so `wrangler rollback` gives a one-command code rollback (§8).
 
 ## Contents
 
@@ -32,16 +43,22 @@ against the sources cited above before following it blindly on a later date.
 
 ## 1. Overview
 
-- **4 repos, 4 independent `wrangler deploy`s.** Each app repo builds and deploys itself
+- **Independent `wrangler deploy`s, one per repo.** Each app repo builds and deploys itself
   (`pnpm run deploy`, typically `vite build && wrangler deploy`, run from inside that repo).
-  Nothing here orchestrates all 4 automatically — treat every step below as a manual
-  checklist Pram runs by hand, in order.
+  Nothing here orchestrates them automatically. Every step below is a checklist run by hand, in
+  order, by the main Claude session (deploys granted 2026-09-24) or by Pram. Migrations on the
+  remote D1 and secrets are Pram's alone.
+- **A fifth Worker, worker-resepsionis** (`resepsionis-invitation.kodekraft.id`, the check-in
+  desk), deploys the same way but sits outside this package. It has no D1, no R2 and no
+  migrations folder; everything goes through worker-user's `ResepsionisRpc` entrypoint.
 - **One shared D1**, `undangan-db` (`database_id = 308d6c07-6f37-4a5a-9e8e-f200204fdc5d`),
-  bound by all 4 Workers. A migration is applied **once**, from any one repo (its
+  bound by the 4 app Workers. A migration is applied **once**, from any one repo (its
   `migrations/` folder is byte-identical across all 4 — enforced by `check:ownership`'s R7
   rule against `migrations.lock.json` in this package) — it is not per-Worker.
-- **One shared R2 bucket**, `undangan-media`, bound by worker-user, worker-admin and
-  worker-undangan (not worker-landing, which doesn't handle media).
+- **Two R2 buckets.** `undangan-media` is bound by worker-user, worker-admin and
+  worker-undangan (not worker-landing, which doesn't handle media). Since 2026-10-01 it is also
+  served publicly through `media-invitation.kodekraft.id` and its cache. `undangan-arsip`, the
+  private Desain Custom PDF archive, is bound by worker-admin only.
 - **`@kodekraft/shared` is a git-protocol dependency**, not npm-published. Each of the 4 apps
   pins its own tag independently in its own `package.json` — see §7.
 - **Migrations are additive-first** (never a destructive `DROP`/rename in the same migration
@@ -53,8 +70,16 @@ against the sources cited above before following it blindly on a later date.
 
 ## 2. Current rollout status (point in time — re-verify before use)
 
-As of this writing, one batch of work is authored and committed locally across all 5 repos
-but **not yet applied to remote D1 and not yet deployed anywhere**:
+**As of 2026-10-02:**
+
+| What | State |
+|---|---|
+| Remote D1 | `0001`–`0034` applied (Pram applied `0033` and `0034` on 2026-10-01). **`0035_staff_access.sql` is pending.** The code that uses it is already deployed and answers "migration not applied yet" until then (checklist task "Terapkan migrasi 0035"). |
+| `kodekraft-shared` | **`v0.23.0`**, whose `migrations.lock.json` has 35 entries (`0001`–`0035`). Tagged and pushed. |
+| The 4 apps' pins | All four on **`#v0.23.0`**. worker-resepsionis does not depend on this package. |
+| Ownership guard mode | worker-landing and worker-user **`throw`** (worker-user since 2026-09-24); worker-admin and worker-undangan **`warn`**. Both warn suites pass under `throw` (re-checked 2026-10-02: admin 842/843, undangan 408/409, where the single failure is each repo's own "still ships warn" assertion). Flipping them is a per-repo decision for Pram (§6). |
+
+The rows below are the 2026-09-21–24 snapshot this section used to hold, kept as history:
 
 | What | State |
 |---|---|
@@ -64,9 +89,8 @@ but **not yet applied to remote D1 and not yet deployed anywhere**:
 | The 4 apps' `@kodekraft/shared` pin | **All four are on `#v0.14.0`** (moved 2026-09-24; `v0.14.0` is a lockstep release). They are not independent any more and must not be allowed to drift: `v0.14.0` is a lockstep release (it changes `migrations.lock.json`), and §7's rule is that a lock change moves all four pins together. If they ever disagree, the odd repo's `check:ownership` is validating against a different grant matrix than the rest. **Check the pin AND the installed copy** — on 2026-09-22 all four were pinned to `v0.13.0` while still holding 0.11.0/0.12.0 on disk, so re-run `pnpm install` after any pin change. |
 | The ownership guard's mode per repo | **Not uniform — read §6 before deploying.** worker-user and worker-undangan wire `getDb(..., { mode: "warn" })` explicitly. worker-landing's `src/db.ts` calls `getDb(env.DB, "worker-landing")` with **no mode argument**, which defaults to `"throw"` — confirmed directly in that file's own code and header comment as of this writing. **Resolved since this was written:** that is the rollout state, not an accident — worker-landing is the one repo already flipped to `throw`, and worker-user, worker-admin and worker-undangan are still in their log-only soak. `QA-shared-16` tracks the per-repo flip and the transition is tested in all four (`warn` logs `db.ownership.violation` and the statement still executes; `throw` refuses the identical write at `prepare()`; the default is `throw`, so `warn` is always an explicit opt-in). |
 
-Because of this, "deploying a release" today means: apply `0027`–`0028` to remote D1 (§3 —
-`0013`–`0026` are already applied, see the table above), then deploy the 4 apps' pending code
-in the order in §4.
+(History ends here.) As of 2026-10-02, the next release step is Pram applying `0035` (§3). No
+Worker has to be redeployed for it: the deployed code already handles both states.
 
 ## 3. Step A — apply pending migrations to the shared D1
 
@@ -76,8 +100,12 @@ in the order in §4.
 > run `ls invitation-worker-landing/migrations/` and `wrangler d1 migrations list undangan-db
 > --remote`, and take the range from those two, not from here.
 >
-> **State as of 2026-09-24:** `0001`–`0026` are applied remotely (`--remote` reported "No
-> migrations to apply"). `0027` and `0028` are pending.
+> **State as of 2026-10-02:** `0001`–`0034` are applied remotely; `0035` is pending. The
+> paragraph below about `0027`/`0028` is kept because the lesson generalises: **read every
+> pending migration's header before applying it**, since some carry a prerequisite query.
+>
+> **State as of 2026-09-24 (history):** `0001`–`0026` were applied remotely (`--remote` reported
+> "No migrations to apply"). `0027` and `0028` were pending.
 >
 > **`0027` and `0028` each carry a prerequisite query in their own file header, and they fail
 > differently — which matters more than it sounds.** `0027` (unique index on `email COLLATE
@@ -92,21 +120,25 @@ migrations.** Full command list, per-migration rollback SQL, and the "what each 
 unlocks" table are in `invitation-worker-landing/project-docs/16-migration-rollout-plan.md`
 — this section is the condensed procedure, not a replacement for it.
 
-1. **Tag and push `kodekraft-shared` first** so its `migrations.lock.json` (28 entries as of
-   `v0.14.0`) is resolvable by the 4 apps once they bump their pin — see §7. A repo that
+1. **Tag and push `kodekraft-shared` first** so its `migrations.lock.json` (35 entries as of
+   `v0.23.0`) is resolvable by the 4 apps once they bump their pin — see §7. A repo that
    merges a mirrored migration into its own `migrations/` folder before bumping its
    `@kodekraft/shared` pin will fail `check:ownership`'s R7 rule ("unexpected file — not
-   present in migrations.lock.json"). **Already done for `v0.14.0`:** tagged, pushed, and all
-   four pins moved on 2026-09-24.
-2. **Back up remote D1** (run from `invitation-worker-landing/`, any sibling works since the
-   D1 is shared):
+   present in migrations.lock.json"). **Already done for `v0.23.0`:** tagged, pushed, and all
+   four pins moved on 2026-10-01.
+2. **Back up remote D1** (run from any app repo, since the D1 is shared). Use `../`, not
+   `..\`, in Git Bash. A backslash there once produced a file name nobody could find:
    ```bash
-   pnpm wrangler d1 export undangan-db --remote --output=../undangan-db-pre-0013.sql
+   npx wrangler d1 export undangan-db --remote --output ../undangan-db-pre-<NNNN>.sql
    ```
-3. **Apply.** `wrangler` applies every not-yet-applied file in `migrations/` in order and
-   skips already-applied ones by filename (recorded in `d1_migrations`):
+   Backups stay on the local machine. They hold customer data, so never upload them to an
+   outside service.
+3. **List, then apply.** The list must show exactly the files you expect. Stop on anything
+   else. `wrangler` applies every not-yet-applied file in `migrations/` in order and skips
+   already-applied ones by filename (recorded in `d1_migrations`):
    ```bash
-   pnpm wrangler d1 migrations apply undangan-db --remote
+   npx wrangler d1 migrations list undangan-db --remote
+   npx wrangler d1 migrations apply undangan-db --remote
    ```
 4. **Verify** (see doc 16 §4/§9/§10 for the exact per-batch `SELECT`/`pragma_table_info`
    checks — they confirm the new columns/tables exist and that every existing row reads a
@@ -125,7 +157,24 @@ one genuinely must be).
 
 ## 4. Step B — deploy the 4 Workers, in order
 
-**Order: worker-user → worker-undangan → worker-landing → worker-admin.** This is a specific
+**Standing rules (2026-10-02).** Most releases now touch one or two repos, not all four. Order
+them by these rules, then use the table below as the default for a release that touches every
+repo:
+
+1. **Migrate first** (§3), whenever the code names a column or table the migration adds.
+2. **RPC providers before their consumers**, whenever an RPC surface changes:
+   - worker-landing before worker-admin (`LANDING`: order reprovision, resend activation, the
+     staff reminder);
+   - worker-landing before worker-user (`LANDING`: add-on purchase from the dashboard);
+   - worker-user before worker-resepsionis (`USER`, entrypoint `ResepsionisRpc`).
+
+   Each consumer types the provider's methods as a mirrored interface, so a consumer deployed
+   ahead of its provider calls a method that is not there yet.
+3. **worker-admin's add-on endpoints and their UI ship together** (callout below).
+4. **Verify against the live URL after every deploy**, and record the version id and the
+   rollback id (§8) in the tracker.
+
+**Default for a full release: worker-user → worker-undangan → worker-landing → worker-admin.** This is a specific
 ruling for this rollout, not a fixed law of the architecture — an earlier design doc
 (`invitation-worker-landing/project-docs/03-architecture-design.md`, explicitly marked
 partially superseded) once proposed `undangan → user → admin → landing` for the abandoned
@@ -138,7 +187,7 @@ change to this order is made deliberately rather than by habit:
 | 1 | **worker-user** | Its `schema.ts` mirrors the `0014`–`0026` columns (`package_tier`, `activated_at`, `expires_at`, `photo_cap_override`, `purchased_addons`, `is_demo`, `checkin_test_mode`, `event_label`, …). Every invitation-scoped request selects these columns explicitly, so deploying worker-user against a D1 that doesn't have them yet fails with "no such column" — confirmed by the migration-rollout plan and the progress tracker alike. **This is why §3 must fully complete first.** worker-user is also the *only* app that writes `activated_at`/`expires_at`/the event-based expiry recompute at runtime — deploying it first means every other app immediately sees correct values instead of stale/NULL ones. |
 | 2 | **worker-undangan** | worker-undangan's Cache API layer keys its cached guest-facing HTML on `invitations.updated_at`. worker-user bumps that column on every public-page content edit. Deploying worker-user *before* (or together with) worker-undangan means a guest never sees stale content for up to the cache's 24h lifetime — deploying in the other order risks exactly that window. (worker-undangan also needs Turnstile configured before it can accept real guest submissions at all — see §5 — independent of this ordering.) |
 | 3 | **worker-landing** | Storefront/checkout. Provisions new `clients`/`invitations`/`sections` rows that worker-user's dashboard and worker-undangan's renderer both immediately need to serve correctly (tier, purchased add-ons, demo flag) — deploying it after those two are already live and schema-complete means a brand-new purchase is servable end-to-end the moment checkout succeeds, with no gap where the buyer's new invitation exists but the app that's supposed to show it doesn't yet understand its columns. Landing's own "Lihat Demo" links point at worker-undangan, so worker-undangan should already be serving correctly before landing sends real traffic there. |
-| 4 | **worker-admin** | Two hard dependencies on worker-landing already being live: (a) worker-admin calls worker-landing over a Cloudflare **service binding** (`LANDING`) for order reprovision/resend-activation — the binding only resolves once `worker-landing` is deployed under that exact Worker name; (b) `INTERNAL_KEY` must be set to the **same value** in both repos (§5) for those calls to authenticate at all. Deploying admin last also means its add-on grant/revoke UI (see the callout below) is shipped against a storefront that has already finished writing the columns (`purchased_addons`, etc.) that UI reads and writes. |
+| 4 | **worker-admin** | Two hard dependencies on worker-landing already being live: (a) worker-admin calls worker-landing over a Cloudflare **service binding** (`LANDING`) for order reprovision/resend-activation — the binding only resolves once `worker-landing` is deployed under that exact Worker name; (b) the RPC methods worker-admin calls must already exist on the deployed worker-landing. Before `OPS-wl-06` (2026-09-24) these calls also needed a shared `INTERNAL_KEY`; RPC needs none. Deploying admin last also means its add-on grant/revoke UI (see the callout below) is shipped against a storefront that has already finished writing the columns (`purchased_addons`, etc.) that UI reads and writes. |
 
 **A repo-internal rule, not an inter-repo ordering one, but just as deploy-blocking: worker-admin's add-on endpoints and their UI must ship in the same deploy window.** Concrete precedent already hit twice in this project: a backend change to `PATCH /api/invitations/:id/addons`'s accepted request shape shipped once with its UI update landing in the same commit (`FE-admin-11` alongside `BE-admin-18/22/23`) specifically because the *previous* UI sent a request shape the *new* backend would reject — and again for the domain-registration/refund queues (`FE-admin-12/13` alongside `BE-admin-19/20`). Before deploying worker-admin, diff what the currently-shipped frontend sends for these endpoints against what the currently-shipped backend now expects; if they've diverged, ship both together or hide the affected UI control until they can.
 
@@ -146,21 +195,25 @@ Per-repo preconditions checklist (in addition to the ordering above):
 
 - [ ] **Before worker-user:** §3 fully applied and verified on remote D1. `JWT_SECRET` /
       `REFRESH_TOKEN_SECRET` set (§5).
-- [ ] **Before worker-undangan:** `TURNSTILE_SECRET` set and `TURNSTILE_SITE_KEY` uncommented
-      in `wrangler.toml`'s `[vars]`, with a Turnstile widget already covering
-      `invitation.kodekraft.id` and every live custom domain (§5) — deployed without this,
-      **every** real guest RSVP/wish/gift submission is rejected (fail-closed by design, not
-      a bug to work around).
-- [ ] **Before worker-landing:** `MIDTRANS_SERVER_KEY` and `INTERNAL_KEY` set (§5).
-      **AND `0026` applied — this one is on the money path.** worker-landing's provisioning
-      INSERT names `invitations.event_label` by column, so deploying it against a D1 without
-      `0026` makes **every paid order's provisioning batch fail**: the buyer is charged and
-      gets nothing. Every other `invitations` query in that repo is a named-column
-      projection, so the INSERT is the whole exposure — but it is enough on its own.
-      (`invitation-worker-landing/project-docs/16-migration-rollout-plan.md` §12.)
+- [ ] **Before worker-undangan:** `TURNSTILE_ENABLED` matches the decision in force. It is
+      `"false"` since 2026-09-25, so Turnstile is not consulted and `GUEST_LIMITER` guards the
+      D1 write quota. If the gate is switched back on, `TURNSTILE_SECRET` and
+      `TURNSTILE_SITE_KEY` must be set, with the widget covering `invitation.kodekraft.id` and
+      every live custom domain. Deployed without them, **every** real guest RSVP/wish/gift
+      submission is rejected (fail-closed by design, not a bug to work around).
+- [ ] **Before worker-landing:** `MIDTRANS_SERVER_KEY` set (§5), `workers_dev = true` still in
+      `wrangler.toml` (Midtrans' notification URL is the workers.dev address, outside Bot Fight
+      Mode). **AND every migration its INSERTs name is applied — this one is on the money
+      path.** worker-landing's provisioning batch names its columns, so deploying it against a
+      D1 missing one makes **every paid order's provisioning batch fail**: the buyer is charged
+      and gets nothing. (`0026`/`event_label` was the first case:
+      `invitation-worker-landing/project-docs/16-migration-rollout-plan.md` §12.)
 - [ ] **Before worker-admin:** worker-landing already deployed (service-binding resolution);
-      `INTERNAL_KEY` byte-identical to worker-landing's value; `CF_API_TOKEN` set if custom
-      domains are in active use; the add-on UI/backend pairing above checked.
+      the `undangan-arsip` bucket exists (the `ARSIP` binding fails the deploy otherwise);
+      `CF_API_TOKEN` set if custom domains are in active use; the add-on UI/backend pairing
+      above checked.
+- [ ] **Before worker-resepsionis:** worker-user already deployed with the `ResepsionisRpc`
+      methods the new build calls.
 
 ## 5. Secrets checklist
 
@@ -171,10 +224,12 @@ specifically (the cross-repo ones), not the full per-Worker list:
 
 | Secret | Where | Coordination note |
 |---|---|---|
-| `INTERNAL_KEY` | worker-landing **and** worker-admin | Must be the exact same value in both — it's how worker-admin's service-binding calls to worker-landing (order reprovision, resend-activation) authenticate. Set on whichever deploys first, then set the identical value on the other before its first deploy. Unset on either side → every `/api/internal/*` call fails closed with 401. |
+| `INTERNAL_KEY` | **retired** (still present on worker-landing and worker-admin until Pram deletes it) | Nothing reads it since `OPS-wl-06` (2026-09-24). Do not set it on any new deploy. `docs/SECRETS.md` "Rules" has the clean-up. |
+| `STAFF_ALERT_WA` / `STAFF_ALERT_EMAIL` | worker-landing only | Also serve worker-admin's `*/30` staff-reminder cron, which asks worker-landing over RPC to send. So the destinations live in one Worker only, never in worker-admin. |
+| `CF_PURGE_TOKEN` | worker-user **and** worker-admin | Set in each (one token may serve both). Without it, deleted media stays in the `media-invitation.kodekraft.id` cache. |
 | `CF_API_TOKEN` | worker-admin only | Needed only once custom domains are in use (`Zone:Zone:Read` + `Zone:Workers Routes:Edit`, never a Global API Key). Unset → domain verify/activate/remove fail closed with RC 99; everything else in worker-admin still works. |
-| `TURNSTILE_SECRET` | worker-undangan only | **Fail-closed**: unset means every guest RSVP/wish/gift submission is rejected, not silently allowed. Get the secret and site key from the *same* Turnstile widget (`docs/SECRETS.md` §"Getting the Cloudflare-issued values" walks through creating it) before this repo's first deploy with Turnstile enabled. |
-| `TURNSTILE_SITE_KEY` | worker-undangan only | **Not a secret** — a public value, set as a plain `wrangler.toml` `[vars]` entry (currently commented out in that file; uncomment and fill in before deploying), not via `wrangler secret put`. Must come from the same widget as `TURNSTILE_SECRET` above. |
+| `TURNSTILE_SECRET` | worker-undangan only | Only read while the gate is on (`TURNSTILE_ENABLED` is `"false"` since 2026-09-25). Gate on and secret unset: **fail-closed**, every guest RSVP/wish/gift submission is rejected, not silently allowed. Take the secret and site key from the *same* Turnstile widget (`docs/SECRETS.md` §"Getting the Cloudflare-issued values"). |
+| `TURNSTILE_SITE_KEY` | worker-undangan only | Public, not a secret. Production currently stores it as a secret, and a `[vars]` entry works equally well; keep it in one place. Must come from the same widget as `TURNSTILE_SECRET` above. |
 | `MIDTRANS_SERVER_KEY` | worker-landing only | Governs both Snap API calls and webhook signature verification. Sandbox keys start `SB-Mid-server-...`, production keys `Mid-server-...` — the key type must match `MIDTRANS_IS_PRODUCTION`'s `[vars]` setting, or payments silently run against the wrong environment. |
 | `JWT_SECRET` / `REFRESH_TOKEN_SECRET` | worker-user **and** worker-admin, separately | Each app has its own pair — **do not reuse worker-user's pair for worker-admin or vice versa** (separate identity tables; a shared key would let a token from one app authenticate against the other). |
 
@@ -187,18 +242,23 @@ repo ships the guard in `"warn"` mode (logs a `db.ownership.violation` event, ne
 request) for one full deploy cycle, so real production traffic can be observed for violations
 `check:ownership`'s static analysis can't see, **before** anyone flips that repo's mode to
 `"throw"` (blocks the write). `QA-shared-16` itself — the task that formally signs off on that
-flip, per repo — is still open as of this writing; no repo has been confirmed to have
-completed its observation soak yet.
+flip, per repo — is ticked. On 2026-09-24 it forced `throw` across every warn repo: worker-user
+failed 30 tests (real out-of-matrix writes, fixed, then flipped), while worker-admin and
+worker-undangan came out clean and **stayed on `warn` by choice**. A clean suite does not prove
+that the paths no test covers obey the matrix, so flipping each is a per-repo decision.
 
-**Confirmed current mode per repo (verify directly in each repo's composition root before
-relying on this table — it will go stale):**
+**Confirmed current mode per repo, 2026-10-02 (verify directly in each repo's composition root
+before relying on this table — it will go stale):**
 
 | Repo | Composition root | Mode |
 |---|---|---|
-| worker-user | `src/worker/db/client.ts` | `"warn"` (explicit) |
-| worker-undangan | `src/db/client.ts` | `"warn"` (explicit, per its own integration task's done-note) |
-| worker-admin | `src/worker/db/client.ts` | `"warn"` (explicit, per its own integration task's done-note) — not independently re-verified in this pass |
-| worker-landing | `src/db.ts` | **`"throw"` (the default — no `mode` option is passed at all).** Confirmed directly in the file; its own header comment states this is deliberate ("Default guard mode is 'throw'"). **This is inconsistent with the other 3 repos' warn-first rollout and isn't explained in the task that added it — flag to Pram before deploying worker-landing.** Either it's an intentional, considered choice (e.g. because `check:ownership`'s static scan is already clean — it is, as of this writing) and should be documented as such, or it should be changed to `{ mode: "warn" }` to match the rollout convention until `QA-shared-16` explicitly signs off on flipping it. |
+| worker-landing | `src/db.ts` | **`"throw"`** (the default; no `mode` option is passed). Deliberate, per that file's header. |
+| worker-user | `src/worker/db/client.ts` | **`"throw"`**, explicit, since 2026-09-24. That file's header records what the flip found. |
+| worker-admin | `src/worker/db/client.ts` | `"warn"`, explicit. Suite under forced `throw` on 2026-10-02: 842/843, where the one failure is its own "still ships warn" assertion. |
+| worker-undangan | `src/db/client.ts` | `"warn"`, explicit. Suite under forced `throw` on 2026-10-02: 408/409, same single expected failure. |
+
+worker-admin and worker-undangan have no `[observability]` block, so a past
+`db.ownership.violation` can't be searched afterwards. Only a live `wrangler tail` sees one.
 
 **After deploying a repo in `"warn"` mode:** watch its logs for a soak period (several days,
 covering at least one real order → provision → edit cycle):
@@ -237,19 +297,22 @@ this package's own `RELEASING.md`. Summary relevant to a deploy:
   `pnpm add github:kodekraft-id/kodekraft-shared#v<previous>`, commit the
   `package.json`/`pnpm-lock.yaml` diff. No rebuild/republish step exists since there's no npm
   registry in this flow (`RELEASING.md` §5).
-- **Worker code**: redeploy the previous build. `wrangler deploy` doesn't itself keep a
-  one-command rollback; the practical rollback is re-running `pnpm run deploy` from the
-  previously-released commit (`git checkout <previous-tag-or-commit> && pnpm install && pnpm
-  run deploy`), or using Cloudflare's dashboard "rollback to previous deployment" if the
-  account/plan supports it. Never roll back Worker code to a version older than the D1 schema
+- **Worker code**: Workers keep versions, so the fast path is
+  `npx wrangler rollback <version-id>`, run inside that Worker's repo. Every deploy entry in the
+  progress tracker records the version it replaced as "rollback `<id>`" for exactly this.
+  `npx wrangler deployments list` shows recent versions if the tracker lacks one. The slow
+  path is re-running `pnpm run deploy` from the previously-released commit
+  (`git checkout <previous-tag-or-commit> && pnpm install && pnpm run deploy`). Either way,
+  verify the live URL afterwards. Never roll back Worker code to a version older than the D1 schema
   it now runs against without also considering the migration rollback below — a rolled-back
   Worker that predates a column the *current* schema requires can still run fine (migrations
   are additive; old code just ignores new columns), but a Worker rolled back to before a
   column it *used to* rely on was dropped will break.
-- **Migrations**: the default rollback for every migration in `0013`–`0028` is "leave it in
-  place" — every one of them is purely additive (new nullable/defaulted columns or new
-  tables), so an unused column/table is harmless even if the code that would populate it is
-  rolled back. A true rollback (accepting data loss in the new columns/tables) is documented
+- **Migrations**: the default rollback for every migration in `0013`–`0035` is "leave it in
+  place". `0013`–`0028` are purely additive (new nullable/defaulted columns or new tables), and
+  `0029`–`0035` contain no `DROP`, rename, table rebuild or `DELETE` (re-checked 2026-10-02).
+  Some do add triggers, so read a migration's own header before assuming it is inert. An
+  unused column/table is harmless even if the code that would populate it is rolled back. A true rollback (accepting data loss in the new columns/tables) is documented
   per-migration, newest-first, as literal `ALTER TABLE ... DROP COLUMN` / `DROP TABLE` SQL in
   `invitation-worker-landing/project-docs/16-migration-rollout-plan.md` §5/§9/§10 — run it
   manually via `wrangler d1 execute --remote`, and **always roll the Worker code back first**,
@@ -262,15 +325,20 @@ this package's own `RELEASING.md`. Summary relevant to a deploy:
 
 - [ ] `wrangler d1 migrations list undangan-db --remote` shows every migration through the
       one you intended applied, and nothing pending beyond it.
-- [ ] Each of the 4 apps' own smoke test / test suite passes against the deployed build where
-      one exists (worker-user 197+, worker-admin, worker-undangan 46+, `kodekraft-shared` 417
-      — exact current counts are in `invitation-worker-landing/project-docs/14-progress-tracker.md`;
-      worker-landing has a `test/` suite but no formal smoke-test-against-prod script beyond
-      `scripts/pay-smoke.mjs`, which targets a dev server, not production).
-- [ ] End-to-end: storefront loads (`kodekraft.id`), a checkout completes and provisions an
-      account, the buyer can sign in on worker-user, a guest link opens on worker-undangan and
-      an RSVP submits successfully, and (if deployed) worker-admin's login and invitation list
-      work.
+- [ ] Each app's own test suite passed on the commit that was deployed (exact current counts
+      are in `invitation-worker-landing/project-docs/14-progress-tracker.md`, and each repo's
+      GitHub CI runs typecheck, tests and build on every push — check it is green).
+      worker-landing has no formal smoke-test-against-prod script beyond
+      `scripts/pay-smoke.mjs`, which targets a dev server, not production.
+- [ ] Live checks after each deploy: `GET /health` (worker-landing) or `GET /api/health`
+      (worker-admin) answers 200; the deployed page loads its current asset bundle; an
+      unauthenticated `GET` of a protected API answers 401; the storefront webhook answers 403
+      to a forged signature (from the worker, not a Cloudflare challenge).
+- [ ] End-to-end when a flow changed: storefront loads (`kodekraft.id`), a sandbox checkout
+      completes and provisions an account, the buyer can sign in on worker-user, a guest link
+      opens on worker-undangan and an RSVP submits successfully, worker-admin's login and
+      invitation list work, and (for worker-resepsionis) the check-in desk signs in with link +
+      PIN.
 - [ ] `wrangler secret list` (run in each Worker's own repo) confirms every required secret
       from §5/`docs/SECRETS.md` is set — names only, never values.
 - [ ] Per §6, start the `wrangler tail ... | grep db.ownership.violation` watch for any repo
