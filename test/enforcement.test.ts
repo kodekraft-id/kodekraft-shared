@@ -264,6 +264,56 @@ describe("BE-mono-22: worker-admin provisioning writes", () => {
   });
 });
 
+// BE-mono-44 (doc 34 §1.4, migrasi 0036): kedaluwarsa password sementara, admin nonaktif, dan detail riwayat akses staf.
+describe("BE-mono-44: kolom baru migrasi 0036", () => {
+  const as = (app: "worker-landing" | "worker-user" | "worker-admin" | "worker-undangan") => {
+    const { db, prepared } = fakeBinding();
+    return { guarded: getDb(db, app), prepared };
+  };
+
+  it("clients.temp_password_expires_at: worker-admin mengisinya bersama password sementara dalam satu UPDATE", () => {
+    const { guarded } = as("worker-admin");
+    expect(() =>
+      guarded.prepare(
+        `update "clients" set "password_hash" = ?, "token_version" = token_version + 1, "temp_password_expires_at" = ?, "updated_at" = ? where ("clients"."id" = ? and "clients"."deleted_at" is null)`,
+      ),
+    ).not.toThrow();
+  });
+
+  it("clients.temp_password_expires_at: worker-user mengosongkannya bersama password yang dipilih pelanggan", () => {
+    const { guarded } = as("worker-user");
+    expect(() =>
+      guarded.prepare(
+        `update "clients" set "password_hash" = ?, "token_version" = token_version + 1, "temp_password_expires_at" = null, "updated_at" = ? where "clients"."id" = ?`,
+      ),
+    ).not.toThrow();
+  });
+
+  it("clients.temp_password_expires_at: worker-landing dan worker-undangan tidak boleh menulisnya", () => {
+    for (const app of ["worker-landing", "worker-undangan"] as const) {
+      const { guarded, prepared } = as(app);
+      expect(() => guarded.prepare(`update "clients" set "temp_password_expires_at" = ? where "id" = ?`), app).toThrow(OwnershipViolationError);
+      expect(prepared, app).toEqual([]);
+    }
+  });
+
+  it("admins.disabled_at: hanya worker-admin", () => {
+    expect(() => as("worker-admin").guarded.prepare(`update "admins" set "disabled_at" = ?, "token_version" = token_version + 1 where "id" = ?`)).not.toThrow();
+    for (const app of ["worker-landing", "worker-user", "worker-undangan"] as const) {
+      expect(() => as(app).guarded.prepare(`update "admins" set "disabled_at" = ? where "id" = ?`), app).toThrow(OwnershipViolationError);
+    }
+  });
+
+  it("staff_access_actions.detail: worker-user menyisipkannya, worker-admin hanya membaca", () => {
+    expect(() =>
+      as("worker-user").guarded.prepare(`insert into "staff_access_actions" ("session_id", "method", "path", "status", "created_at", "detail") values (?, ?, ?, ?, ?, ?)`),
+    ).not.toThrow();
+    expect(() =>
+      as("worker-admin").guarded.prepare(`insert into "staff_access_actions" ("session_id", "method", "path", "status", "created_at", "detail") values (?, ?, ?, ?, ?, ?)`),
+    ).toThrow(OwnershipViolationError);
+  });
+});
+
 describe("BE-mono-24: invitations.purchased_addons ownership", () => {
   const as = (app: "worker-landing" | "worker-user" | "worker-admin" | "worker-undangan") => {
     const { db, prepared } = fakeBinding();

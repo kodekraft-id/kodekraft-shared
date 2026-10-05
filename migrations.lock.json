@@ -33,5 +33,6 @@
   "0032_order_status_log.sql": "ff1d71bd4e64b1e60d34921ca9c91c9f4791c9aac6b2edf342f6486ddcd195a0",
   "0033_invitation_style_versions.sql": "e636b22d589be100cd73b0e3331b801d4682eed034b3ee8910042d706cc4e3e0",
   "0034_custom_design.sql": "a5c131708fcdccb700ffd19b030ed62bdbf2aea008716caeb39bc0f4bbc5b9c7",
-  "0035_staff_access.sql": "aeb63e89e946cc2dca727f4848419ca87c9c3997bf917891c60d3d7b408925e7"
+  "0035_staff_access.sql": "aeb63e89e946cc2dca727f4848419ca87c9c3997bf917891c60d3d7b408925e7",
+  "0036_account_hardening.sql": "c01c07986f275165fe06bd4d2288c77d203aa952de7f95ba302342ea4386ad2f"
 }
