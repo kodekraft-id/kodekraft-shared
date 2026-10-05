@@ -365,7 +365,16 @@ you cannot know who is already holding a token.
   **Profil**, fill **Password baru** and save. For `bali@` and `jaya@`, deleting the account in
   the admin panel (**Klien → Hapus**) is an equally good fix: it is a soft delete, and a deleted
   client can neither sign in nor use a token issued earlier.
-- **Admins** (`superadmin@`, `ops@`): the admin panel has no password page, although the API
+- **Admins** (`superadmin@`, `ops@`): **once the admin panel release that adds the Admin page
+  is live** (BE-admin-68/FE-admin-41, together with BE-admin-67/FE-admin-40; written 2026-10-05,
+  not deployed at the time), use that page instead of the snippet below: sign in at
+  `adm-invitation.kodekraft.id`, open **Admin**, press **Ganti password** on your own row, fill
+  the current password, the new one and the repeat. Every session of the account ends, this one
+  included. The snippet below only works on the OLDER panel, which kept the refresh token in
+  `localStorage` (`kk_admin_refresh`); from BE-admin-67 on that token is an HttpOnly cookie the
+  console cannot read, and the snippet stops at `Belum masuk`.
+
+  On the older panel the admin panel has no password page, although the API
   has `PATCH /api/auth/me`. Sign in at `adm-invitation.kodekraft.id`, open the browser console
   (F12 → Console; Chrome may ask you to type `allow pasting` first) and paste the snippet
   below. It asks for the new password in a prompt and prints `BERHASIL`, or `DITOLAK` with the
