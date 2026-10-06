@@ -1,49 +1,48 @@
 // Unit tests for the tier capability map and effective-capability API (BE-mono-10, BE-mono-23,
 // BE-mono-24), against the real exports, not a fixture. Source design: project-docs/11 section 1
-// and project-docs/17-tier-addons-requirements.md FR-1 (AC-1.1 .. AC-1.9).
+// and project-docs/17-tier-addons-requirements.md FR-1; rewritten for doc 35 (6 Okt 2026, BE-mono-45):
+// the three tiers are identical (no photo cap, no guest cap, lifetime) and custom domain, Extra Galeri and
+// Extra Tamu are retired add-ons.
 
 import { describe, expect, it } from "vitest";
 import {
-  GALLERY_ADDON_PHOTOS,
+  GUEST_TECHNICAL_FENCE,
   MAX_ADDON_QUANTITY,
-  PHOTO_CEILING,
+  PHOTO_TECHNICAL_FENCE,
+  RETIRED_ADDON_IDS,
   TIER_CAPABILITIES,
   computeExpiresAt,
   getEffectiveCapabilities,
+  getEffectiveGuestCap,
   getEffectivePhotoCap,
   hasFeature,
-  maxUsefulGalleryUnits,
   parsePurchasedAddons,
   type PackageTier,
   type PurchasedAddons,
 } from "../src/tier.js";
+import { LEGACY_MONTHS, useLegacyDurations } from "./support/legacy-durations.js";
 
 const TIERS: PackageTier[] = ["basic", "premium", "exclusive"];
-const TIER_PHOTO_CAP: Record<PackageTier, number> = { basic: 5, premium: 15, exclusive: 50 };
-const TIER_GUEST_CAP: Record<PackageTier, number> = { basic: 250, premium: 500, exclusive: 1000 };
-const TIER_MONTHS: Record<PackageTier, number> = { basic: 3, premium: 6, exclusive: 12 };
 
 describe("TIER_CAPABILITIES", () => {
   it("has exactly the 3 documented tiers", () => {
     expect(Object.keys(TIER_CAPABILITIES).sort()).toEqual(["basic", "exclusive", "premium"]);
   });
 
-  it.each(TIERS)("%s: photo cap and duration match the rulings; QR, domain and Seating Plan are add-ons only", (tier) => {
+  it.each(TIERS)("%s: no photo cap, no guest cap, lifetime; QR, domain and Seating Plan are add-ons only", (tier) => {
     expect(TIER_CAPABILITIES[tier]).toEqual({
-      photoCap: TIER_PHOTO_CAP[tier],
-      guestCap: TIER_GUEST_CAP[tier],
+      photoCap: null,
+      guestCap: null,
       qrCheckin: false,
       customDomain: false,
       seating: false,
-      durationMonths: TIER_MONTHS[tier],
+      durationMonths: null,
     });
   });
 
-  it("has no tier with a null duration, and Premium is strictly between Basic and Exclusive", () => {
-    for (const tier of TIERS) expect(TIER_CAPABILITIES[tier].durationMonths).not.toBeNull();
-    const premium = TIER_CAPABILITIES.premium.durationMonths as number;
-    expect(premium).toBeGreaterThan(3);
-    expect(premium).toBeLessThan(12);
+  it("the three tiers are identical (doc 35: only the label survives, as information about old rows)", () => {
+    expect(TIER_CAPABILITIES.premium).toEqual(TIER_CAPABILITIES.basic);
+    expect(TIER_CAPABILITIES.exclusive).toEqual(TIER_CAPABILITIES.basic);
   });
 
   it("is frozen (Object.freeze) at the top level", () => {
@@ -51,25 +50,16 @@ describe("TIER_CAPABILITIES", () => {
   });
 
   it("exports the documented constants", () => {
-    expect(GALLERY_ADDON_PHOTOS).toBe(15);
-    expect(PHOTO_CEILING).toBe(50);
     expect(MAX_ADDON_QUANTITY).toBe(99);
-  });
-});
-
-describe("maxUsefulGalleryUnits", () => {
-  it("is 3 for basic, 3 for premium, 0 for exclusive", () => {
-    expect(maxUsefulGalleryUnits("basic")).toBe(3);
-    expect(maxUsefulGalleryUnits("premium")).toBe(3);
-    expect(maxUsefulGalleryUnits("exclusive")).toBe(0);
+    expect(PHOTO_TECHNICAL_FENCE).toBe(300);
+    expect(GUEST_TECHNICAL_FENCE).toBe(10_000);
+    expect([...RETIRED_ADDON_IDS].sort()).toEqual(["domain", "gallery", "guests"]);
   });
 
-  it("the max useful units reach the ceiling, one fewer does not (basic, premium)", () => {
-    for (const tier of ["basic", "premium"] as const) {
-      const units = maxUsefulGalleryUnits(tier);
-      expect(getEffectivePhotoCap(tier, null, { gallery: units })).toBe(PHOTO_CEILING);
-      expect(getEffectivePhotoCap(tier, null, { gallery: units - 1 })).toBeLessThan(PHOTO_CEILING);
-    }
+  it("the technical fences are far above anything a normal invitation reaches and the tier table never mentions them", () => {
+    expect(PHOTO_TECHNICAL_FENCE).toBeGreaterThan(50);
+    expect(GUEST_TECHNICAL_FENCE).toBeGreaterThan(1000);
+    expect(JSON.stringify(TIER_CAPABILITIES)).not.toMatch(/300|10000/);
   });
 });
 
@@ -150,7 +140,7 @@ describe("parsePurchasedAddons", () => {
 });
 
 describe("hasFeature (2-arg: tier defaults only)", () => {
-  it.each(TIERS)("%s: qrCheckin and customDomain are false without add-ons (Premium lost QR, Exclusive lost domain)", (tier) => {
+  it.each(TIERS)("%s: qrCheckin and customDomain are false without add-ons", (tier) => {
     expect(hasFeature(tier, "qrCheckin")).toBe(false);
     expect(hasFeature(tier, "customDomain")).toBe(false);
   });
@@ -162,9 +152,10 @@ describe("hasFeature (with add-ons)", () => {
     expect(hasFeature(tier, "customDomain", { qrcheckin: 1 })).toBe(false);
   });
 
-  it.each(TIERS)("%s: domain add-on => customDomain true, qrCheckin false", (tier) => {
-    expect(hasFeature(tier, "customDomain", { domain: 1 })).toBe(true);
+  it.each(TIERS)("%s: an old domain add-on row grants NOTHING (custom domains are switched off, doc 35)", (tier) => {
+    expect(hasFeature(tier, "customDomain", { domain: 1 })).toBe(false);
     expect(hasFeature(tier, "qrCheckin", { domain: 1 })).toBe(false);
+    expect(getEffectiveCapabilities(tier, { domain: 1 }).customDomain).toBe(false);
   });
 
   it("a gallery add-on grants neither feature; empty/null/undefined add-ons grant nothing", () => {
@@ -179,114 +170,57 @@ describe("hasFeature (with add-ons)", () => {
   });
 });
 
-describe("getEffectivePhotoCap", () => {
-  it("returns the tier default when no override and no add-ons", () => {
-    for (const tier of TIERS) expect(getEffectivePhotoCap(tier)).toBe(TIER_PHOTO_CAP[tier]);
+describe("getEffectivePhotoCap / getEffectiveGuestCap (doc 35: no sellable cap)", () => {
+  it.each(TIERS)("%s: null, and enforcement falls back to the technical fence", (tier) => {
+    expect(getEffectivePhotoCap(tier)).toBeNull();
+    expect(getEffectiveGuestCap(tier)).toBeNull();
+    expect(getEffectivePhotoCap(tier) ?? PHOTO_TECHNICAL_FENCE).toBe(300);
+    expect(getEffectiveGuestCap(tier) ?? GUEST_TECHNICAL_FENCE).toBe(10_000);
   });
 
-  it("null/undefined override falls through to the tier default", () => {
-    expect(getEffectivePhotoCap("basic", null)).toBe(5);
-    expect(getEffectivePhotoCap("basic", undefined)).toBe(5);
-    expect(getEffectivePhotoCap("basic", undefined, null)).toBe(5);
-  });
-
-  it("override wins and may exceed the ceiling", () => {
-    expect(getEffectivePhotoCap("basic", 20)).toBe(20);
-    expect(getEffectivePhotoCap("exclusive", 100)).toBe(100);
-    expect(getEffectivePhotoCap("basic", 80, {})).toBe(80);
-  });
-
-  it("an override of 0 is a legitimate zero-cap, even with gallery add-ons", () => {
-    expect(getEffectivePhotoCap("premium", 0)).toBe(0);
-    expect(getEffectivePhotoCap("basic", 0, { gallery: 3 })).toBe(0);
-  });
-
-  it("an override beats the add-on path", () => {
-    expect(getEffectivePhotoCap("basic", 8, { gallery: 3 })).toBe(8);
-  });
-
-  const galleryMatrix: Array<[PackageTier, number, number]> = [
-    ["basic", 0, 5],
-    ["basic", 1, 20],
-    ["basic", 2, 35],
-    ["basic", 3, 50],
-    ["basic", 4, 50],
-    ["basic", 10, 50],
-    ["basic", MAX_ADDON_QUANTITY, 50],
-    ["premium", 0, 15],
-    ["premium", 1, 30],
-    ["premium", 2, 45],
-    ["premium", 3, 50],
-    ["premium", 4, 50],
-    ["premium", 10, 50],
-    ["exclusive", 0, 50],
-    ["exclusive", 1, 50],
-    ["exclusive", 3, 50],
-    ["exclusive", 10, 50],
-  ];
-  it.each(galleryMatrix)("%s + gallery x%i => %i (ceiling-clamped)", (tier, quantity, expected) => {
-    expect(getEffectivePhotoCap(tier, null, { gallery: quantity })).toBe(expected);
-  });
-
-  it("qrcheckin/domain add-ons never change the photo cap", () => {
-    expect(getEffectivePhotoCap("basic", null, { qrcheckin: 1, domain: 1 })).toBe(5);
+  it("takes only the tier: the staff override and the gallery/guests add-ons no longer exist as inputs", () => {
+    expect(getEffectivePhotoCap.length).toBe(1);
+    expect(getEffectiveGuestCap.length).toBe(1);
   });
 });
 
 describe("getEffectiveCapabilities", () => {
-  it.each(TIERS)("%s with no add-ons equals TIER_CAPABILITIES (AC-1.1)", (tier) => {
+  it.each(TIERS)("%s with no add-ons equals TIER_CAPABILITIES", (tier) => {
     expect(getEffectiveCapabilities(tier, {})).toEqual(TIER_CAPABILITIES[tier]);
     expect(getEffectiveCapabilities(tier)).toEqual(TIER_CAPABILITIES[tier]);
-    expect(getEffectiveCapabilities(tier, null, null)).toEqual(TIER_CAPABILITIES[tier]);
+    expect(getEffectiveCapabilities(tier, null)).toEqual(TIER_CAPABILITIES[tier]);
   });
 
-  // 3 tiers x every combination of {qrcheckin, domain, gallery 0/2} x override (none/null/0/8/80)
-  const addonCombos: PurchasedAddons[] = [];
+  // 3 tiers x every combination of {qrcheckin, domain(retired), gallery(retired) 0/2, guests(retired) 0/3, seating}
+  const combos: PurchasedAddons[] = [];
   for (const qr of [0, 1]) {
     for (const domain of [0, 1]) {
       for (const gallery of [0, 2]) {
-        const combo: PurchasedAddons = {};
-        if (qr) combo.qrcheckin = 1;
-        if (domain) combo.domain = 1;
-        if (gallery) combo.gallery = gallery;
-        addonCombos.push(combo);
+        for (const guests of [0, 3]) {
+          for (const seating of [0, 1]) {
+            const combo: PurchasedAddons = {};
+            if (qr) combo.qrcheckin = 1;
+            if (domain) combo.domain = 1;
+            if (gallery) combo.gallery = gallery;
+            if (guests) combo.guests = guests;
+            if (seating) combo.seating = 1;
+            combos.push(combo);
+          }
+        }
       }
     }
   }
-  const overrides: Array<number | null | undefined> = [undefined, null, 0, 8, 80];
-  const cases = addonCombos.flatMap((combo) => overrides.map((override) => ({ combo, override })));
 
   describe.each(TIERS)("%s", (tier) => {
-    it.each(cases)("addons $combo override $override", ({ combo, override }) => {
-      const galleryCap = Math.min(TIER_PHOTO_CAP[tier] + 15 * (combo.gallery ?? 0), 50);
-      expect(getEffectiveCapabilities(tier, combo, override)).toEqual({
-        photoCap: override ?? Math.max(TIER_PHOTO_CAP[tier], galleryCap),
-        // No `guests` unit in these combos, and the 4th argument is left off, so the guest cap
-        // stays at the tier default — proving the photo override never leaks across caps.
-        guestCap: TIER_GUEST_CAP[tier],
+    it.each(combos)("addons %o", (combo) => {
+      expect(getEffectiveCapabilities(tier, combo)).toEqual({
+        photoCap: null,
+        guestCap: null,
         qrCheckin: combo.qrcheckin === 1,
-        customDomain: combo.domain === 1,
-        // No `seating` unit in these combos either: neither QR nor domain may grant it.
-        seating: false,
-        durationMonths: TIER_MONTHS[tier],
+        customDomain: false, // the domain add-on is retired: even a recorded row grants nothing
+        seating: combo.seating === 1,
+        durationMonths: null,
       });
-    });
-  });
-
-  it("specific spec cells (AC-1.3 / 1.4 / 1.5)", () => {
-    expect(getEffectiveCapabilities("basic", { gallery: 2 }).photoCap).toBe(35);
-    expect(getEffectiveCapabilities("premium", { gallery: 1 }).photoCap).toBe(30);
-    expect(getEffectiveCapabilities("premium", { gallery: 3 }).photoCap).toBe(50);
-    expect(getEffectiveCapabilities("basic", { gallery: 3 }, 8).photoCap).toBe(8);
-    expect(getEffectiveCapabilities("basic", { gallery: 3 }, 0).photoCap).toBe(0);
-    expect(getEffectiveCapabilities("basic", {}, 80).photoCap).toBe(80);
-    expect(getEffectiveCapabilities("exclusive", { domain: 1, qrcheckin: 1 })).toEqual({
-      photoCap: 50,
-      guestCap: 1000,
-      qrCheckin: true,
-      customDomain: true,
-      seating: false,
-      durationMonths: 12,
     });
   });
 
@@ -303,12 +237,12 @@ describe("getEffectiveCapabilities", () => {
   });
 
   it("accepts frozen add-ons (does not mutate inputs)", () => {
-    expect(getEffectiveCapabilities("basic", Object.freeze({ gallery: 2 }), 3).photoCap).toBe(3);
+    expect(getEffectiveCapabilities("basic", Object.freeze({ qrcheckin: 1 })).qrCheckin).toBe(true);
   });
 
   it("composes with parsePurchasedAddons for stored values (JSON, legacy array, garbage)", () => {
     expect(getEffectiveCapabilities("basic", parsePurchasedAddons('{"gallery":1,"qrcheckin":1}'))).toMatchObject({
-      photoCap: 20,
+      photoCap: null,
       qrCheckin: true,
     });
     expect(getEffectiveCapabilities("premium", parsePurchasedAddons(["qrcheckin"])).qrCheckin).toBe(true);
@@ -316,8 +250,22 @@ describe("getEffectiveCapabilities", () => {
   });
 });
 
-describe("computeExpiresAt", () => {
+describe("computeExpiresAt: lifetime", () => {
   const at = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
+
+  it.each(TIERS)("%s: always null (every invitation is lifetime)", (tier) => {
+    expect(computeExpiresAt(at(2026, 1, 15), tier)).toBeNull();
+    expect(computeExpiresAt(at(2026, 12, 31), tier)).toBeNull();
+  });
+});
+
+describe("computeExpiresAt: the month arithmetic that is kept in case an active period returns", () => {
+  useLegacyDurations();
+  const at = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
+
+  it("the legacy table is back inside this block only", () => {
+    expect(TIER_CAPABILITIES.basic.durationMonths).toBe(LEGACY_MONTHS.basic);
+  });
 
   it.each([
     ["basic", at(2026, 1, 15), at(2026, 4, 15)],
@@ -330,7 +278,7 @@ describe("computeExpiresAt", () => {
     expect(computeExpiresAt(activatedAt, tier)).toEqual(expected);
   });
 
-  it("returns a Date (never null) for every tier", () => {
+  it("returns a Date for every tier while a duration is set", () => {
     for (const tier of TIERS) expect(computeExpiresAt(at(2026, 1, 15), tier)).toBeInstanceOf(Date);
   });
 
@@ -359,17 +307,5 @@ describe("computeExpiresAt", () => {
     ["exclusive", at(2026, 10, 31), at(2027, 10, 31)],
   ] as const)("month-end: %s from %s", (tier, activatedAt, expected) => {
     expect(computeExpiresAt(activatedAt, tier)).toEqual(expected);
-  });
-
-  it("legacy/defensive: a null duration returns null (test-only injection, restored after)", () => {
-    const basic = TIER_CAPABILITIES.basic as { durationMonths: number | null };
-    const original = basic.durationMonths;
-    try {
-      basic.durationMonths = null;
-      expect(computeExpiresAt(at(2026, 1, 15), "basic")).toBeNull();
-    } finally {
-      basic.durationMonths = original;
-    }
-    expect(TIER_CAPABILITIES.basic.durationMonths).toBe(3);
   });
 });

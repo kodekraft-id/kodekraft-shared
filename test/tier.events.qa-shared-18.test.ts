@@ -23,6 +23,7 @@ import {
   isInvitationLocked,
   parsePurchasedAddons,
 } from "../src/tier.js";
+import { useLegacyDurations } from "./support/legacy-durations.js";
 
 const at = (iso: string) => new Date(iso);
 const addMonths = (base: Date, months: number) => {
@@ -32,18 +33,20 @@ const addMonths = (base: Date, months: number) => {
 };
 
 describe("QA-shared-18 — regression: pre-existing exports unaffected by BE-mono-29/30", () => {
-  it("computeExpiresAt (the OLD publish-time function, AC-20.8) is untouched: same fixed vectors as before", () => {
+  useLegacyDurations(); // doc 35: lifetime is the default now; the vectors below need the old 3/6/12-month table
+
+  it("computeExpiresAt (the OLD publish-time function, AC-20.8) keeps its arithmetic: same fixed vectors as before", () => {
     expect(computeExpiresAt(at("2026-01-31T00:00:00.000Z"), "basic")).toEqual(at("2026-05-01T00:00:00.000Z"));
     expect(computeExpiresAt(at("2026-01-15T00:00:00.000Z"), "premium")).toEqual(at("2026-07-15T00:00:00.000Z"));
     expect(computeExpiresAt(at("2026-01-15T00:00:00.000Z"), "exclusive")).toEqual(at("2027-01-15T00:00:00.000Z"));
     expect(computeExpiresAt.length).toBe(2); // signature unchanged
   });
 
-  it("TIER_CAPABILITIES values/shape are exactly what QA-shared-17 pinned, still frozen", () => {
+  it("TIER_CAPABILITIES values/shape are exactly what doc 35 pinned (inside this block the legacy durations are put back), still frozen", () => {
     expect(TIER_CAPABILITIES).toEqual({
-      basic: { photoCap: 5, guestCap: 250, qrCheckin: false, customDomain: false, seating: false, durationMonths: 3 },
-      premium: { photoCap: 15, guestCap: 500, qrCheckin: false, customDomain: false, seating: false, durationMonths: 6 },
-      exclusive: { photoCap: 50, guestCap: 1000, qrCheckin: false, customDomain: false, seating: false, durationMonths: 12 },
+      basic: { photoCap: null, guestCap: null, qrCheckin: false, customDomain: false, seating: false, durationMonths: 3 },
+      premium: { photoCap: null, guestCap: null, qrCheckin: false, customDomain: false, seating: false, durationMonths: 6 },
+      exclusive: { photoCap: null, guestCap: null, qrCheckin: false, customDomain: false, seating: false, durationMonths: 12 },
     });
     expect(Object.isFrozen(TIER_CAPABILITIES)).toBe(true);
   });
@@ -59,7 +62,7 @@ describe("QA-shared-18 — regression: pre-existing exports unaffected by BE-mon
   });
 
   it("getEffectivePhotoCap / hasFeature / parsePurchasedAddons spot-checks unchanged", () => {
-    expect(getEffectivePhotoCap("basic", null, { gallery: 3 })).toBe(50);
+    expect(getEffectivePhotoCap("basic")).toBeNull();
     expect(hasFeature("exclusive", "qrCheckin", { qrcheckin: 1 })).toBe(true);
     expect(hasFeature("exclusive", "qrCheckin", {})).toBe(false);
     expect(parsePurchasedAddons('{"gallery":2}')).toEqual({ gallery: 2 });
@@ -75,6 +78,8 @@ describe("QA-shared-18 — regression: pre-existing exports unaffected by BE-mon
 });
 
 describe("QA-shared-18 — computeExpiresAtFromEvents: mixed usable/unusable dates in ONE event list", () => {
+  useLegacyDurations();
+
   it("one usable event amid unusable ones (garbage strings, empty, missing) is used; the rest are excluded, not fatal", () => {
     const events = [
       { start_at: "not-a-date", end_at: "" },
@@ -115,6 +120,8 @@ describe("QA-shared-18 — computeExpiresAtFromEvents: mixed usable/unusable dat
 });
 
 describe("QA-shared-18 — WIB/UTC day boundary at the exact millisecond", () => {
+  useLegacyDurations();
+
   it("start_at exactly at WIB midnight (00:00:00.000 WIB) belongs to THAT WIB day, not the previous one", () => {
     // 2026-03-01T00:00:00.000+07:00 == 2026-02-28T17:00:00.000Z
     const iso = computeExpiresAtFromEvents([{ start_at: "2026-02-28T17:00:00.000Z" }], "basic");

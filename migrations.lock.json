@@ -34,5 +34,6 @@
   "0033_invitation_style_versions.sql": "e636b22d589be100cd73b0e3331b801d4682eed034b3ee8910042d706cc4e3e0",
   "0034_custom_design.sql": "a5c131708fcdccb700ffd19b030ed62bdbf2aea008716caeb39bc0f4bbc5b9c7",
   "0035_staff_access.sql": "aeb63e89e946cc2dca727f4848419ca87c9c3997bf917891c60d3d7b408925e7",
-  "0036_account_hardening.sql": "c01c07986f275165fe06bd4d2288c77d203aa952de7f95ba302342ea4386ad2f"
+  "0036_account_hardening.sql": "c01c07986f275165fe06bd4d2288c77d203aa952de7f95ba302342ea4386ad2f",
+  "0037_login_failures.sql": "040fc2cf57711e80c1f7af668af3124e6bd1b4e4edb5e3810576d5988290ce9c"
 }

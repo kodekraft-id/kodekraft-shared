@@ -3,25 +3,23 @@
 // durations. Pure values and predicates only, no D1 access. `assertFeature` is deliberately NOT
 // exported from this package (project-docs/12 §5.2): each consuming repo writes its own 3-liner
 // over `hasFeature`, throwing its own local `HttpError`, since the response envelope stays per-repo.
-/** Extra photos granted by one `gallery` add-on unit. */
-export const GALLERY_ADDON_PHOTOS = 15;
-/** Baris tamu yang ditambahkan satu unit add-on `guests` (doc 20 §2: +100 tamu, Rp 25.000). */
-export const GUESTS_ADDON_GUESTS = 100;
-/** Hard photo ceiling for the tier-plus-add-on path (doc 17 ruling 7). A staff override may exceed it. */
-export const PHOTO_CEILING = 50;
+/** Pagar teknis foto galeri per undangan (doc 35 §3.3, jawaban Pram 6 Okt 2026). BUKAN kuota: tidak dijual dan tidak
+ * ditampilkan di mana pun; ia hanya menahan akun yang disalahgunakan (ribuan foto 20 MB sebagai penyimpanan gratis).
+ * Bila tercapai, pesannya ramah dan menyuruh menghubungi tim. Satu konstanta untuk menaikkannya kapan saja. */
+export const PHOTO_TECHNICAL_FENCE = 300;
+/** Pagar teknis baris tamu per undangan (doc 35 §3.3): sama dengan {@link PHOTO_TECHNICAL_FENCE}, bukan kuota. */
+export const GUEST_TECHNICAL_FENCE = 10_000;
 /** Sane upper bound applied when parsing a stored add-on quantity (defends against garbage rows). */
 export const MAX_ADDON_QUANTITY = 99;
-/** Premium's active duration in months. Pram ruled 6 for OQ-26 (must stay strictly between
- * Basic's 3 and Exclusive's 12). */
-const PREMIUM_DURATION_MONTHS = 6;
 /** Frozen tier -> capability defaults. Changing what a tier unlocks is a pricing decision,
  * same category as changing its price — edited by code review + redeploy, never at runtime.
- * v0.4.0 VALUE CHANGE: qrCheckin/customDomain are false at every tier (add-ons only);
- * durations are basic 3 / premium 6 / exclusive 12 (no tier is "never expires"). */
+ * v0.4.0 VALUE CHANGE: qrCheckin/customDomain are false at every tier (add-ons only).
+ * v0.26.0 VALUE CHANGE (doc 35, 6 Okt 2026): the three tiers are identical — no photo cap, no guest cap, and no active
+ * period (lifetime). Only the label survives (`invitations.package_tier`), as information about old rows. */
 export const TIER_CAPABILITIES = Object.freeze({
-    basic: { photoCap: 5, guestCap: 250, qrCheckin: false, customDomain: false, seating: false, durationMonths: 3 },
-    premium: { photoCap: 15, guestCap: 500, qrCheckin: false, customDomain: false, seating: false, durationMonths: PREMIUM_DURATION_MONTHS },
-    exclusive: { photoCap: 50, guestCap: 1000, qrCheckin: false, customDomain: false, seating: false, durationMonths: 12 },
+    basic: { photoCap: null, guestCap: null, qrCheckin: false, customDomain: false, seating: false, durationMonths: null },
+    premium: { photoCap: null, guestCap: null, qrCheckin: false, customDomain: false, seating: false, durationMonths: null },
+    exclusive: { photoCap: null, guestCap: null, qrCheckin: false, customDomain: false, seating: false, durationMonths: null },
 });
 // Personal guest links (`guests.token`, the `?to=` mechanism) are deliberately NOT modeled
 // in this map: every tier has them, unconditionally (confirmed 2026-09-17). Do not add a
@@ -34,6 +32,10 @@ export const TIER_CAPABILITIES = Object.freeze({
 // tier, never by template key. No `templates.min_tier` column exists or should be added.
 const ADDON_IDS = ["domain", "qrcheckin", "gallery", "guests", "seating", "design"];
 const BINARY_ADDON_IDS = new Set(["domain", "qrcheckin", "seating", "design"]);
+/** Add-ons that are no longer sold and grant nothing (doc 35, 6 Okt 2026): `gallery` and `guests` (no photo or guest quota
+ * to extend) and `domain` (custom domains are switched off entirely). Old `purchased_addons` rows still PARSE (nothing
+ * throws), but they have no effect on {@link hasFeature} or {@link getEffectiveCapabilities}. */
+export const RETIRED_ADDON_IDS = Object.freeze(["domain", "gallery", "guests"]);
 function isAddonId(value) {
     return typeof value === "string" && ADDON_IDS.includes(value);
 }
@@ -83,58 +85,40 @@ export function parsePurchasedAddons(raw) {
     return result;
 }
 /**
- * Most `gallery` units that still change the photo cap for a tier (storefront limit / server
- * rejection): Basic 3, Premium 3, Exclusive 0.
+ * Effective photo cap: `null` (no sellable cap) for every tier since doc 35 (6 Okt 2026). The staff override
+ * (`invitations.photo_cap_override`) and the `gallery` add-on no longer matter: the column stays as dead data. Enforcement
+ * uses `getEffectivePhotoCap(tier) ?? PHOTO_TECHNICAL_FENCE`.
  */
-export function maxUsefulGalleryUnits(tier) {
-    return Math.max(0, Math.ceil((PHOTO_CEILING - TIER_CAPABILITIES[tier].photoCap) / GALLERY_ADDON_PHOTOS));
+export function getEffectivePhotoCap(tier) {
+    return TIER_CAPABILITIES[tier].photoCap;
 }
 /**
- * Effective photo cap: staff override (`invitations.photo_cap_override`) if set, otherwise
- * `min(tierCap + 15 x galleryQty, PHOTO_CEILING)` (never below the tier's own cap). `0` is a
- * legitimate override; only `null`/`undefined` fall back. An override may exceed the ceiling.
+ * Effective guest-row cap: `null` (no sellable cap) for every tier since doc 35 (6 Okt 2026); the staff override and the
+ * `guests` add-on no longer matter. Enforcement uses `getEffectiveGuestCap(tier) ?? GUEST_TECHNICAL_FENCE`.
  */
-export function getEffectivePhotoCap(tier, override, addons) {
-    if (override !== null && override !== undefined)
-        return override;
-    const tierCap = TIER_CAPABILITIES[tier].photoCap;
-    const withGallery = tierCap + GALLERY_ADDON_PHOTOS * (addons?.gallery ?? 0);
-    return Math.max(tierCap, Math.min(withGallery, PHOTO_CEILING));
-}
-/**
- * Kuota tamu efektif: override staf (`invitations.guest_cap_override`) kalau diisi, kalau tidak
- * `tierCap + 100 x guestsQty`. `0` adalah override yang sah; hanya `null`/`undefined` yang jatuh
- * ke perhitungan biasa.
- *
- * Sengaja TIDAK ada plafon global seperti `PHOTO_CEILING`. Plafon foto ada karena setiap foto
- * menambah bobot halaman yang harus dimuat tamu di jaringan seluler — batas teknis, bukan
- * komersial. Baris tamu tidak punya batas setara: satu baris adalah satu baris D1, dan tidak ada
- * satu pun halaman yang memuat semuanya sekaligus. Batas praktisnya adalah
- * {@link MAX_ADDON_QUANTITY} unit (= 9.900 tamu tambahan), yang berlaku saat kuantitas dibaca.
- * Menambahkan plafon buatan di sini hanya akan menolak uang pelanggan tanpa alasan teknis.
- */
-export function getEffectiveGuestCap(tier, override, addons) {
-    if (override !== null && override !== undefined)
-        return override;
-    const tierCap = TIER_CAPABILITIES[tier].guestCap;
-    return tierCap + GUESTS_ADDON_GUESTS * (addons?.guests ?? 0);
+export function getEffectiveGuestCap(tier) {
+    return TIER_CAPABILITIES[tier].guestCap;
 }
 const FEATURE_ADDON = Object.freeze({
     qrCheckin: "qrcheckin",
     customDomain: "domain",
     seating: "seating",
 });
-/** Whether an invitation has a binary feature: the tier grants it (never today) OR it was purchased. */
+/** Whether an invitation has a binary feature: the tier grants it (never today) OR it was purchased. A retired add-on
+ * ({@link RETIRED_ADDON_IDS}: today `customDomain`) grants nothing even when an old row still records it. */
 export function hasFeature(tier, feature, addons) {
     if (TIER_CAPABILITIES[tier][feature])
         return true;
-    return (addons?.[FEATURE_ADDON[feature]] ?? 0) >= 1;
+    const addon = FEATURE_ADDON[feature];
+    if (RETIRED_ADDON_IDS.includes(addon))
+        return false;
+    return (addons?.[addon] ?? 0) >= 1;
 }
-/** Everything an invitation is actually entitled to: tier defaults + purchased add-ons + staff override. */
-export function getEffectiveCapabilities(tier, addons, photoCapOverride, guestCapOverride) {
+/** Everything an invitation is actually entitled to: tier defaults + purchased (non-retired) add-ons. */
+export function getEffectiveCapabilities(tier, addons) {
     return {
-        photoCap: getEffectivePhotoCap(tier, photoCapOverride, addons),
-        guestCap: getEffectiveGuestCap(tier, guestCapOverride, addons),
+        photoCap: getEffectivePhotoCap(tier),
+        guestCap: getEffectiveGuestCap(tier),
         qrCheckin: hasFeature(tier, "qrCheckin", addons),
         customDomain: hasFeature(tier, "customDomain", addons),
         seating: hasFeature(tier, "seating", addons),
@@ -150,9 +134,9 @@ function addTierPeriodMonths(base, months) {
     result.setUTCMonth(result.getUTCMonth() + months);
     return result;
 }
-/** Computes `invitations.expires_at` at publish time. Pure — no D1 access. The `null` branch is
- * legacy/defensive only (no tier has a null duration any more). Shares its month arithmetic with
- * {@link computeExpiresAtFromEvents} via the internal `addTierPeriodMonths` helper. */
+/** Computes `invitations.expires_at` at publish time. Pure — no D1 access. Since doc 35 (6 Okt 2026) every tier has a
+ * `null` duration, so this ALWAYS returns `null` (lifetime). The month arithmetic stays, shared with
+ * {@link computeExpiresAtFromEvents} via the internal `addTierPeriodMonths` helper, in case an active period ever returns. */
 export function computeExpiresAt(activatedAt, tier) {
     const months = TIER_CAPABILITIES[tier].durationMonths;
     if (months === null)

@@ -11,21 +11,25 @@
 // cases are randomised across the space but identical on every run and on every machine — a
 // failure is reproducible from the output alone, and the shared package gains no new dependency
 // (it is consumed as a git dependency by four Workers; adding one is not a free decision).
+// Updated for doc 35 (v0.26.0, BE-mono-45): the sellable photo and guest caps and the active period are gone, so the cap
+// properties become "always null / always the fence" and the month arithmetic is exercised with the legacy table put back
+// by `useLegacyDurations()`.
 import { describe, expect, it } from "vitest";
 import {
   TIER_CAPABILITIES,
-  GALLERY_ADDON_PHOTOS,
-  PHOTO_CEILING,
+  GUEST_TECHNICAL_FENCE,
   MAX_ADDON_QUANTITY,
+  PHOTO_TECHNICAL_FENCE,
   computeExpiresAt,
   getEffectiveCapabilities,
+  getEffectiveGuestCap,
   getEffectivePhotoCap,
   hasFeature,
-  maxUsefulGalleryUnits,
   parsePurchasedAddons,
   type PackageTier,
   type PurchasedAddons,
 } from "../src/tier.js";
+import { LEGACY_MONTHS, useLegacyDurations } from "./support/legacy-durations.js";
 
 const TIERS: PackageTier[] = ["basic", "premium", "exclusive"];
 const FEATURES = ["qrCheckin", "customDomain"] as const;
@@ -47,17 +51,11 @@ const RUNS = 300;
 // 1. Backward compatibility, exhaustively rather than by example.
 // ---------------------------------------------------------------------------
 
-describe("QA-shared-17: the widened signatures are indistinguishable from the old ones when unused", () => {
-  it("getEffectivePhotoCap: every way of saying 'no override, no add-ons' agrees, for every tier", () => {
+describe("QA-shared-17: absent inputs are inert", () => {
+  it("getEffectivePhotoCap / getEffectiveGuestCap: null for every tier, whatever else the caller holds", () => {
     for (const tier of TIERS) {
-      const expected = TIER_CAPABILITIES[tier].photoCap;
-      // The old 1-arg/2-arg call sites, plus every spelling of "absent" the widened params accept.
-      expect(getEffectivePhotoCap(tier)).toBe(expected);
-      expect(getEffectivePhotoCap(tier, null)).toBe(expected);
-      expect(getEffectivePhotoCap(tier, undefined)).toBe(expected);
-      expect(getEffectivePhotoCap(tier, null, null)).toBe(expected);
-      expect(getEffectivePhotoCap(tier, undefined, undefined)).toBe(expected);
-      expect(getEffectivePhotoCap(tier, null, {})).toBe(expected);
+      expect(getEffectivePhotoCap(tier)).toBeNull();
+      expect(getEffectiveGuestCap(tier)).toBeNull();
     }
   });
 
@@ -73,105 +71,51 @@ describe("QA-shared-17: the widened signatures are indistinguishable from the ol
     }
   });
 
-  it("getEffectiveCapabilities with no add-ons and no override IS the frozen tier row", () => {
+  it("getEffectiveCapabilities with no add-ons IS the frozen tier row", () => {
     for (const tier of TIERS) {
       expect(getEffectiveCapabilities(tier)).toEqual(TIER_CAPABILITIES[tier]);
-      expect(getEffectiveCapabilities(tier, null, null)).toEqual(TIER_CAPABILITIES[tier]);
-      expect(getEffectiveCapabilities(tier, {}, undefined)).toEqual(TIER_CAPABILITIES[tier]);
+      expect(getEffectiveCapabilities(tier, null)).toEqual(TIER_CAPABILITIES[tier]);
+      expect(getEffectiveCapabilities(tier, {})).toEqual(TIER_CAPABILITIES[tier]);
     }
   });
 
   it("an add-on the caller did not buy never changes the answer", () => {
-    // Widening means the *presence* of the parameter must be inert. A zero quantity, an unknown
-    // key, and an unrelated add-on must all read exactly like `{}`.
     for (const tier of TIERS) {
       const inert: PurchasedAddons[] = [{}, { gallery: 0 }, { qrcheckin: 0 }, { domain: 0 }];
       for (const addons of inert) {
-        expect(getEffectivePhotoCap(tier, null, addons)).toBe(TIER_CAPABILITIES[tier].photoCap);
         expect(hasFeature(tier, "qrCheckin", addons)).toBe(TIER_CAPABILITIES[tier].qrCheckin);
         expect(hasFeature(tier, "customDomain", addons)).toBe(TIER_CAPABILITIES[tier].customDomain);
       }
-      // A `domain` unit must not grant QR check-in, and vice versa — no cross-talk.
+      // No cross-talk between add-ons, and a retired `domain` row never grants anything.
       expect(hasFeature(tier, "qrCheckin", { domain: 1 })).toBe(false);
       expect(hasFeature(tier, "customDomain", { qrcheckin: 1 })).toBe(false);
-      expect(getEffectivePhotoCap(tier, null, { domain: 1, qrcheckin: 1 })).toBe(TIER_CAPABILITIES[tier].photoCap);
+      expect(hasFeature(tier, "customDomain", { domain: 1 })).toBe(false);
     }
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2. Photo-cap properties over the whole input space.
+// 2. Cap properties over the whole input space: there is no sellable cap, whatever was bought.
 // ---------------------------------------------------------------------------
 
-describe("QA-shared-17: photo cap properties", () => {
-  it("never below the tier cap, never above the ceiling — over randomised gallery quantities", () => {
+describe("QA-shared-17: no sellable photo or guest cap, whatever add-ons an old row records", () => {
+  it("over randomised gallery/guests quantities the caps stay null (retired add-ons have no effect)", () => {
     const rand = prng(20260921);
     for (const tier of TIERS) {
-      const tierCap = TIER_CAPABILITIES[tier].photoCap;
       for (let i = 0; i < RUNS; i++) {
         const gallery = Math.floor(rand() * (MAX_ADDON_QUANTITY + 1));
-        const cap = getEffectivePhotoCap(tier, null, { gallery });
-        expect(cap, `tier=${tier} gallery=${gallery}`).toBeGreaterThanOrEqual(tierCap);
-        expect(cap, `tier=${tier} gallery=${gallery}`).toBeLessThanOrEqual(PHOTO_CEILING);
+        const guests = Math.floor(rand() * (MAX_ADDON_QUANTITY + 1));
+        const caps = getEffectiveCapabilities(tier, { gallery, guests });
+        expect(caps.photoCap, `tier=${tier} gallery=${gallery}`).toBeNull();
+        expect(caps.guestCap, `tier=${tier} guests=${guests}`).toBeNull();
       }
     }
   });
 
-  it("monotonic: buying one more gallery unit never lowers the cap", () => {
+  it("the enforced limit is exactly the technical fence, identical for every tier", () => {
     for (const tier of TIERS) {
-      for (let gallery = 0; gallery < MAX_ADDON_QUANTITY; gallery++) {
-        const here = getEffectivePhotoCap(tier, null, { gallery });
-        const next = getEffectivePhotoCap(tier, null, { gallery: gallery + 1 });
-        expect(next, `tier=${tier} gallery=${gallery}`).toBeGreaterThanOrEqual(here);
-      }
-    }
-  });
-
-  it("maxUsefulGalleryUnits is exactly the point where the cap stops moving", () => {
-    // Its contract, and the number the storefront limits on / the server rejects past. If it
-    // drifted from the cap maths, buyers could be sold a unit that changes nothing.
-    for (const tier of TIERS) {
-      const useful = maxUsefulGalleryUnits(tier);
-      const atUseful = getEffectivePhotoCap(tier, null, { gallery: useful });
-
-      // Nothing beyond it has any effect...
-      for (const beyond of [useful + 1, useful + 5, MAX_ADDON_QUANTITY]) {
-        expect(getEffectivePhotoCap(tier, null, { gallery: beyond }), `tier=${tier} beyond=${beyond}`).toBe(atUseful);
-      }
-      // ...and every unit up to it strictly increases the cap.
-      for (let gallery = 0; gallery < useful; gallery++) {
-        expect(
-          getEffectivePhotoCap(tier, null, { gallery: gallery + 1 }),
-          `tier=${tier} gallery=${gallery}`,
-        ).toBeGreaterThan(getEffectivePhotoCap(tier, null, { gallery }));
-      }
-    }
-    // Exclusive already sits at the ceiling, so no gallery unit is ever useful to it.
-    expect(maxUsefulGalleryUnits("exclusive")).toBe(0);
-  });
-
-  it("each useful unit adds exactly GALLERY_ADDON_PHOTOS, until the ceiling clamps it", () => {
-    for (const tier of TIERS) {
-      const tierCap = TIER_CAPABILITIES[tier].photoCap;
-      for (let gallery = 0; gallery <= MAX_ADDON_QUANTITY; gallery++) {
-        const expected = Math.max(tierCap, Math.min(tierCap + GALLERY_ADDON_PHOTOS * gallery, PHOTO_CEILING));
-        expect(getEffectivePhotoCap(tier, null, { gallery }), `tier=${tier} gallery=${gallery}`).toBe(expected);
-      }
-    }
-  });
-
-  it("a staff override always wins — including 0, and including values above the ceiling", () => {
-    // `0` is a legitimate override (photo upload switched off for this invitation); only
-    // null/undefined fall back. An override may deliberately exceed PHOTO_CEILING.
-    const rand = prng(775533);
-    for (const tier of TIERS) {
-      for (let i = 0; i < RUNS; i++) {
-        const override = Math.floor(rand() * 500) - 100; // spans negatives, 0, and > ceiling
-        const gallery = Math.floor(rand() * (MAX_ADDON_QUANTITY + 1));
-        expect(getEffectivePhotoCap(tier, override, { gallery }), `tier=${tier} override=${override}`).toBe(override);
-      }
-      expect(getEffectivePhotoCap(tier, 0, { gallery: 3 })).toBe(0);
-      expect(getEffectivePhotoCap(tier, PHOTO_CEILING + 25)).toBe(PHOTO_CEILING + 25);
+      expect(getEffectivePhotoCap(tier) ?? PHOTO_TECHNICAL_FENCE).toBe(300);
+      expect(getEffectiveGuestCap(tier) ?? GUEST_TECHNICAL_FENCE).toBe(10_000);
     }
   });
 });
@@ -240,13 +184,33 @@ describe("QA-shared-17: parsePurchasedAddons is total (never throws) and always 
 });
 
 // ---------------------------------------------------------------------------
-// 4. computeExpiresAt — the regression half of the task.
+// 4. computeExpiresAt: lifetime, and the month arithmetic that stays for a returning active period.
 // ---------------------------------------------------------------------------
 
-describe("QA-shared-17: computeExpiresAt properties", () => {
-  it("is never null for any real tier, and always strictly after activation", () => {
-    // Doc 17 ruling 20/21: there is no 'never expires' tier any more. The `null` branch is
-    // legacy/defensive; no tier may reach it.
+describe("QA-shared-17: computeExpiresAt is lifetime", () => {
+  it("is null for every tier and every activation instant", () => {
+    const rand = prng(112358);
+    for (const tier of TIERS) {
+      for (let i = 0; i < RUNS; i++) {
+        const activatedAt = new Date(Date.UTC(2020 + Math.floor(rand() * 12), Math.floor(rand() * 12), 1 + Math.floor(rand() * 28), Math.floor(rand() * 24), Math.floor(rand() * 60)));
+        expect(computeExpiresAt(activatedAt, tier), `tier=${tier} activatedAt=${activatedAt.toISOString()}`).toBeNull();
+      }
+    }
+  });
+
+  it("an add-on purchase never gives an invitation an end date", () => {
+    for (const tier of TIERS) {
+      for (const addons of [{}, { gallery: 3 }, { domain: 1 }, { qrcheckin: 1 }, { gallery: 99, domain: 1, qrcheckin: 1 }]) {
+        expect(getEffectiveCapabilities(tier, addons).durationMonths).toBeNull();
+      }
+    }
+  });
+});
+
+describe("QA-shared-17: computeExpiresAt month arithmetic (legacy table put back for this block)", () => {
+  useLegacyDurations();
+
+  it("is never null while a duration is set, and always strictly after activation", () => {
     const rand = prng(112358);
     for (const tier of TIERS) {
       for (let i = 0; i < RUNS; i++) {
@@ -260,10 +224,9 @@ describe("QA-shared-17: computeExpiresAt properties", () => {
 
   it("matches native setUTCMonth(+durationMonths) exactly, month-end overflow included", () => {
     // The overflow (Jan 31 + 1 month -> Mar 2/3) is documented behaviour, not a bug to fix here.
-    // Pinning it means a future "fix" has to be a deliberate, visible decision.
     const rand = prng(1618033);
     for (const tier of TIERS) {
-      const months = TIER_CAPABILITIES[tier].durationMonths!;
+      const months = LEGACY_MONTHS[tier];
       for (let i = 0; i < RUNS; i++) {
         const activatedAt = new Date(Date.UTC(2024 + Math.floor(rand() * 5), Math.floor(rand() * 12), 1 + Math.floor(rand() * 31), 12, 34, 56));
         const native = new Date(activatedAt);
@@ -281,30 +244,10 @@ describe("QA-shared-17: computeExpiresAt properties", () => {
     }
   });
 
-  it("tier durations stay strictly ordered 3 < 6 < 12 (OQ-26's own constraint)", () => {
-    const basic = TIER_CAPABILITIES.basic.durationMonths!;
-    const premium = TIER_CAPABILITIES.premium.durationMonths!;
-    const exclusive = TIER_CAPABILITIES.exclusive.durationMonths!;
-    expect(basic).toBe(3);
-    expect(premium).toBe(6);
-    expect(exclusive).toBe(12);
-    expect(basic).toBeLessThan(premium);
-    expect(premium).toBeLessThan(exclusive);
-
-    // ...and that ordering survives into the computed dates, not just the constants.
+  it("the legacy ordering 3 < 6 < 12 survives into the computed dates", () => {
     const at = new Date("2026-01-15T00:00:00.000Z");
     expect(computeExpiresAt(at, "basic")!.getTime()).toBeLessThan(computeExpiresAt(at, "premium")!.getTime());
     expect(computeExpiresAt(at, "premium")!.getTime()).toBeLessThan(computeExpiresAt(at, "exclusive")!.getTime());
-  });
-
-  it("an add-on purchase never changes how long the invitation lives", () => {
-    // Duration is a tier property only — no add-on extends it. Worth pinning now that
-    // getEffectiveCapabilities takes add-ons: it would be an easy thing to wire in by accident.
-    for (const tier of TIERS) {
-      for (const addons of [{}, { gallery: 3 }, { domain: 1 }, { qrcheckin: 1 }, { gallery: 99, domain: 1, qrcheckin: 1 }]) {
-        expect(getEffectiveCapabilities(tier, addons).durationMonths).toBe(TIER_CAPABILITIES[tier].durationMonths);
-      }
-    }
   });
 });
 
@@ -315,25 +258,19 @@ describe("QA-shared-17: computeExpiresAt properties", () => {
 describe("QA-shared-17: TIER_CAPABILITIES is frozen and shaped as documented", () => {
   it("cannot be mutated at runtime — pricing changes go through code review, not a stray write", () => {
     expect(Object.isFrozen(TIER_CAPABILITIES)).toBe(true);
-    const before = TIER_CAPABILITIES.basic.photoCap;
+    const before = TIER_CAPABILITIES.basic.qrCheckin;
     try {
-      (TIER_CAPABILITIES as any).basic = { photoCap: 999 };
+      (TIER_CAPABILITIES as any).basic = { qrCheckin: true };
     } catch {
       // strict mode throws; non-strict silently ignores. Either is fine — the value must hold.
     }
-    expect(TIER_CAPABILITIES.basic.photoCap).toBe(before);
+    expect(TIER_CAPABILITIES.basic.qrCheckin).toBe(before);
   });
 
   it("every tier row has exactly the six documented keys and no others", () => {
     // The guard comments in doc 11 call out `personalGuestLinks` and story flags by name:
     // personal links are ungated at every tier, so a flag here would be a gate nobody asked for.
-    //
-    // `guestCap` (doc 20, 2026-09-25) is the fifth key, and adding it did NOT contradict that
-    // guard: it caps how many guest ROWS may be ADDED, not whether personal links work. Every
-    // tier still has them, unconditionally, and an already-added guest is never blocked.
-    //
-    // `seating` (doc 21 §5.0 D5, 2026-09-29) is the sixth: a binary add-on flag with the exact
-    // shape of `qrCheckin` — false at every tier, true only when purchased.
+    // `seating` (doc 21 §5.0 D5) is a binary add-on flag with the exact shape of `qrCheckin`.
     for (const tier of TIERS) {
       expect(Object.keys(TIER_CAPABILITIES[tier]).sort()).toEqual([
         "customDomain",
@@ -346,35 +283,26 @@ describe("QA-shared-17: TIER_CAPABILITIES is frozen and shaped as documented", (
     }
   });
 
-  it("guestCap is 250/500/1000 and strictly increases with tier (doc 20 §2)", () => {
-    expect(TIER_CAPABILITIES.basic.guestCap).toBe(250);
-    expect(TIER_CAPABILITIES.premium.guestCap).toBe(500);
-    expect(TIER_CAPABILITIES.exclusive.guestCap).toBe(1000);
-    // Capacity rises FASTER than price (1:2:4 vs 1:2:3.5) — that ratio is what makes the
-    // upper tiers feel better value per guest, and it is a pricing decision, not an accident.
-    expect(TIER_CAPABILITIES.premium.guestCap).toBeGreaterThan(TIER_CAPABILITIES.basic.guestCap);
-    expect(TIER_CAPABILITIES.exclusive.guestCap).toBeGreaterThan(TIER_CAPABILITIES.premium.guestCap);
+  it("the three tiers hold identical rows: no photo cap, no guest cap, lifetime (doc 35)", () => {
+    for (const tier of TIERS) {
+      expect(TIER_CAPABILITIES[tier].photoCap, tier).toBeNull();
+      expect(TIER_CAPABILITIES[tier].guestCap, tier).toBeNull();
+      expect(TIER_CAPABILITIES[tier].durationMonths, tier).toBeNull();
+    }
   });
 
-  it("qrCheckin, customDomain and seating are false at EVERY tier — they are add-ons only (doc 17 ruling 13, doc 21 D5)", () => {
+  it("qrCheckin and seating are false at EVERY tier and come only from their own add-on; customDomain comes from nothing (doc 35)", () => {
     for (const tier of TIERS) {
       expect(TIER_CAPABILITIES[tier].qrCheckin, tier).toBe(false);
       expect(TIER_CAPABILITIES[tier].customDomain, tier).toBe(false);
       expect(TIER_CAPABILITIES[tier].seating, tier).toBe(false);
     }
-    // ...so the ONLY way to get any of them is a purchased add-on — and only its own.
     for (const tier of TIERS) {
       expect(hasFeature(tier, "qrCheckin", { qrcheckin: 1 })).toBe(true);
-      expect(hasFeature(tier, "customDomain", { domain: 1 })).toBe(true);
+      expect(hasFeature(tier, "customDomain", { domain: 1 })).toBe(false);
       expect(hasFeature(tier, "seating", { seating: 1 })).toBe(true);
       expect(hasFeature(tier, "seating", { qrcheckin: 1, domain: 1, gallery: 3, guests: 5 })).toBe(false);
       expect(hasFeature(tier, "qrCheckin", { seating: 1 })).toBe(false);
     }
-  });
-
-  it("photo caps are non-decreasing across tiers and none exceeds the ceiling", () => {
-    expect(TIER_CAPABILITIES.basic.photoCap).toBeLessThanOrEqual(TIER_CAPABILITIES.premium.photoCap);
-    expect(TIER_CAPABILITIES.premium.photoCap).toBeLessThanOrEqual(TIER_CAPABILITIES.exclusive.photoCap);
-    for (const tier of TIERS) expect(TIER_CAPABILITIES[tier].photoCap).toBeLessThanOrEqual(PHOTO_CEILING);
   });
 });

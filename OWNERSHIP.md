@@ -25,6 +25,7 @@ consuming repo for how this matrix is enforced against real code.
 | `invitation_domains` | `schema/domains.ts` | worker-landing (id, invitation_id, domain, kind, status, requested_at, order_id, price_idr, term_months, created_at, updated_at); worker-user; worker-admin | worker-undangan |
 | `invitation_style_versions` | `schema/invitations.ts` | worker-admin | worker-undangan |
 | `invitations` | `schema/invitations.ts` | worker-landing (id, client_id, template_id, slug, status, event_type, event_label, title, opening, story, quote, music_r2_key, music_title, settings, wa_template, package_tier, purchased_addons, created_at, updated_at); worker-user (template_id, title, opening, story, quote, music_r2_key, music_title, settings, wa_template, event_type, event_label, status, activated_at, expires_at, checkin_test_mode, updated_at); worker-admin (id, client_id, template_id, slug, event_type, event_label, title, settings, status, package_tier, photo_cap_override, purchased_addons, checkin_test_mode, created_at, deleted_at, updated_at) | worker-undangan, worker-landing |
+| `login_failures` | `schema/login.ts` | worker-user; worker-admin | — |
 | `order_refunds` | `schema/orders.ts` | worker-admin | worker-landing |
 | `order_status_log` | `schema/orders.ts` | worker-landing | worker-admin |
 | `orders` | `schema/orders.ts` | worker-landing | worker-admin |

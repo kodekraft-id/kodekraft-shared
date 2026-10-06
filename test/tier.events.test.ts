@@ -11,6 +11,7 @@ import {
   lastCheckinWindowEnd,
   type PackageTier,
 } from "../src/tier.js";
+import { useLegacyDurations } from "./support/legacy-durations.js";
 
 const at = (iso: string) => new Date(iso);
 const addMonths = (base: Date, months: number) => {
@@ -19,7 +20,19 @@ const addMonths = (base: Date, months: number) => {
   return d;
 };
 
+// Doc 35 (6 Okt 2026): every tier is lifetime, so by default there is nothing to compute.
+describe("computeExpiresAtFromEvents: lifetime (the default since v0.26.0)", () => {
+  it.each(["basic", "premium", "exclusive"] as const)("%s: null whatever the events and activatedAt are", (tier) => {
+    expect(computeExpiresAtFromEvents([{ end_at: "2026-01-15T00:00:00.000Z" }], tier)).toBeNull();
+    expect(computeExpiresAtFromEvents([], tier, { activatedAt: "2026-01-15T00:00:00Z" })).toBeNull();
+    expect(computeExpiresAtFromEvents(null, tier)).toBeNull();
+  });
+});
+
+// The remaining arithmetic is kept for a returning active period; the legacy 3/6/12-month table is put back for this block.
 describe("computeExpiresAtFromEvents", () => {
+  useLegacyDurations();
+
   describe("basis selection", () => {
     it("multi-event: the latest effective end wins, whichever event it comes from", () => {
       const events = [

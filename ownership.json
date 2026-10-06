@@ -391,6 +391,15 @@
       "readers": [],
       "note": "BE-mono-36 (2026-09-30, doc 22 R2, approved by Pram), AUTHORED in 0031_usher_sessions.sql: one row per receptionist phone that signed in to the Dashboard Resepsionis with the invitation's link + 6-digit PIN + the usher's own name. Only the SHA-256 of the random session token is stored (the token itself lives in an HttpOnly cookie on the resepsionis domain). expires_at = the close of the last event's check-in window (24 hours for a session created in test mode or on a demo); revoked_at = the owner signed this phone out, or rotated the PIN (which signs every phone out). Rows are revoked, never deleted, so usher_name keeps answering 'dicatat oleh' for guests.checked_in_by / group_attendees.checked_in_by. worker-user only: the resepsionis Worker has no D1 binding and reaches this table through worker-user's RPC entrypoint (doc 22 §4)."
     },
+    "login_failures": {
+      "module": "schema/login.ts",
+      "writers": {
+        "worker-user": "*",
+        "worker-admin": "*"
+      },
+      "readers": [],
+      "note": "BE-mono-46 (2026-10-06, doc 33 §5.3, approved by Pram), AUTHORED in 0037_login_failures.sql: one row per wrong password on the customer dashboard login (scope 'client', written by worker-user) and on the admin panel login (scope 'admin', written by worker-admin), keyed by the SHA-256 of the lower-cased email and of the IP so neither is stored in the clear. Counted in a 15-minute window per account + IP to delay the next attempt (30 s from 5 wrong in a row, 5 min from 10; the policy lives in @kodekraft/shared/login-throttle). A successful login deletes that account + IP's rows; rows older than the window are pruned when the next failure is recorded; attempts refused while delayed are NOT written. Each Worker only touches its own scope's rows."
+    },
     "usher_pin_failures": {
       "module": "schema/usher.ts",
       "writers": {
