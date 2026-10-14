@@ -127,6 +127,7 @@ binds to. Deploy worker-user before worker-resepsionis whenever that surface cha
 | `CF_ANALYTICS_API_TOKEN` | for usage monitoring and Statistik Traffic | the daily usage-monitoring cron logs `usage_monitoring.skipped` and returns without calling Cloudflare — **you get no free-tier ceiling alerts at all** — and the Statistik Traffic page shows its Cloudflare part as "belum terhubung" (its D1 numbers still show) |
 | `CF_ACCOUNT_ID` | with `CF_ANALYTICS_API_TOKEN` | as `CF_ANALYTICS_API_TOKEN`: either one missing skips the cron. An identifier, not a credential, so `[vars]` is fine too, but production has it as a **secret** (since 2026-09-23). Keep it in exactly one of the two places |
 | `CF_PURGE_TOKEN` | optional | objects the media-retention cron deletes from R2 stay in the `media-invitation.kodekraft.id` cache until it expires (the skip is logged as `media_cache.purge_skipped`) |
+| `RESEND_USAGE_API_KEY` | optional | the Email (Resend) part of Statistik Traffic shows "belum tersambung" instead of the daily and monthly email quota (BE-admin-73, landing doc 37). Must be a Resend key with **Full access**: `GET /usage` refuses a Sending-access key, and Resend has no read-only permission. Keep it a separate key from worker-landing's `RESEND_API_KEY` (which stays Sending access) |
 | `INTERNAL_KEY` | **retired** | nothing reads it; see [Rules](#where-secrets-live). Still present on the live Worker until Pram deletes it |
 
 As of 2026-10-02 the live Worker holds all of the above, including the retired `INTERNAL_KEY`.
@@ -494,6 +495,8 @@ Run in each Worker's repo unless noted.
       exists before the first deploy (the `ARSIP` binding fails otherwise).
 - [ ] worker-user and worker-admin: `CF_PURGE_TOKEN` set (section 4), so deleted media also
       leaves the `media-invitation.kodekraft.id` cache.
+- [ ] worker-admin: `RESEND_USAGE_API_KEY` set (Full access) if you want the email quota on
+      Statistik Traffic.
 - [ ] worker-admin: `CF_ANALYTICS_API_TOKEN` and `CF_ACCOUNT_ID` set if you want free-tier usage
       alerts and the Statistik Traffic numbers; otherwise accept that the cron skips silently.
       Check the next day's logs for `usage_monitoring.run_complete` (working) vs
