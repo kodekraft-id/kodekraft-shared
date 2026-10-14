@@ -65,10 +65,11 @@ As of 2026-10-02 the live Worker holds `MIDTRANS_SERVER_KEY`, `RESEND_API_KEY`,
 `WA_GATEWAY_TOKEN` and the retired `INTERNAL_KEY`. Neither `STAFF_ALERT_*` secret is set yet
 (checklist task "Pasang nomor WA staf").
 
-Non-secret `[vars]` in `wrangler.toml`: `WA_NUMBER` (the storefront's WhatsApp buttons;
-**still the placeholder `6281234567890`** until Pram supplies the real business number),
-`INVITATION_BASE_URL`, `BRAND_NAME`, `SITE_BASE_URL`, `DASH_BASE_URL`, `ADMIN_BASE_URL` (links
-inside staff alerts), `MIDTRANS_IS_PRODUCTION`, `MAIL_FROM`, `WA_GATEWAY_URL`.
+Non-secret `[vars]` in `wrangler.toml`: `WA_NUMBER` (the storefront's WhatsApp buttons, the business
+number `6288976596712` since 2 Oct 2026), `INVITATION_BASE_URL`, `BRAND_NAME`, `SITE_BASE_URL`, `DASH_BASE_URL`,
+`ADMIN_BASE_URL` (links inside staff alerts), `MIDTRANS_IS_PRODUCTION`, `MAIL_FROM` (`noreply@kodekraft.id`, sent
+through Resend; no mailbox), `MAIL_REPLY_TO` (`support@kodekraft.id`, the GoDaddy mailbox that receives customer
+replies; BE-wl-87, landing doc 36), `WA_GATEWAY_URL`.
 
 Other settings and bindings:
 
