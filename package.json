@@ -1,6 +1,6 @@
 {
   "name": "@kodekraft/shared",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "description": "Cross-repo contract package for the 4 invitation-worker-* repos: ownership matrix, D1 write guard, tier capabilities (no photo or guest cap, lifetime), staff style rules, the Desain Custom consent terms, the staff-access handoff contract, and the login-throttle policy. Consumed as a git-protocol dependency, not published to npm.",
   "private": true,
   "type": "module",

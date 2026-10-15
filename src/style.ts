@@ -32,10 +32,10 @@ const FORBIDDEN: { pattern: RegExp; reason: string }[] = [
   { pattern: /</, reason: "Tanda < tidak boleh dipakai di CSS khusus." },
   // Escape CSS bisa menyamarkan kata yang dilarang di bawah (`u\72l(` dibaca `url(`).
   { pattern: /\\/, reason: "Garis miring terbalik (\\) tidak boleh dipakai. Tulis karakternya langsung." },
-  { pattern: /@import\b/i, reason: "@import tidak boleh dipakai: CSS khusus tidak boleh memuat berkas dari luar." },
+  { pattern: /@import\b/i, reason: "@import tidak boleh dipakai: CSS khusus tidak boleh memuat file dari luar." },
   {
     pattern: /\b(?:url|image|image-set|cross-fade|element|src)\s*\(/i,
-    reason: "url(), image() dan sejenisnya tidak boleh dipakai: CSS khusus tidak boleh memuat berkas dari luar.",
+    reason: "url(), image() dan sejenisnya tidak boleh dipakai: CSS khusus tidak boleh memuat file dari luar.",
   },
   { pattern: /\bexpression\s*\(|javascript\s*:|\bbehavior\s*:|-moz-binding/i, reason: "CSS khusus tidak boleh menjalankan kode." },
 ];

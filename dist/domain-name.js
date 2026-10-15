@@ -109,7 +109,7 @@ export function normalizeDomainName(raw) {
         return invalid("Nama domain tidak boleh memiliki tanda hubung ganda di posisi ke-3 dan ke-4");
     }
     if (RESERVED_LABELS.has(label)) {
-        return invalid("Nama domain ini tidak dapat digunakan, silakan pilih nama lain");
+        return invalid("Nama domain ini tidak bisa dipakai, pilih nama lain, ya");
     }
     return { ok: true, value: `${label}${DOMAIN_SUFFIX}`, reason: null };
 }

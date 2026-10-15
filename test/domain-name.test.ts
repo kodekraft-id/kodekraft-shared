@@ -58,7 +58,7 @@ describe("normalizeDomainName", () => {
   });
 
   it("rejects a reserved label even when written as a full name", () => {
-    expect(bad("admin.my.id")).toMatch(/tidak dapat digunakan/);
+    expect(bad("admin.my.id")).toMatch(/tidak bisa dipakai/);
   });
 
   // DOC-wl-06, finalised 2026-09-24. The loop above proves whatever is in the list
