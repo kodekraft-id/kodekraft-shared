@@ -70,6 +70,12 @@ What changed since 2026-09-21:
 
 ## 2. Current rollout status (point in time — re-verify before use)
 
+> **PENDING RELEASE (2026-10-19, landing doc 40 + doc 41) — written, tested and pushed, NOT deployed.** `@kodekraft/shared` **v0.28.0** is a **lockstep** release because of migrations
+> **`0038_guest_instagram.sql`** (`guests.channel` + `guests.instagram`, unique index, two triggers) and **`0039_admin_role.sql`** (`admins.role`, promotes exactly one superadmin), byte-identical in all four
+> repos. All four pins are on `#v0.28.0`. Order for Pram: `wrangler d1 export` backup, then apply **`0038` + `0039`** with `--remote` first (both purely additive; the deployed code runs fine on the
+> migrated D1) → check `SELECT email, role FROM admins` shows one superadmin → deploy worker-user → worker-admin → worker-undangan (worker-landing only moves its pin; no deploy needed) → verify live.
+> New worker-user and worker-admin code reads the new columns, so it must NOT be deployed before the migrations. Artifact task `rilis-19okt`.
+
 > **PENDING RELEASE (2026-10-06, doc 35 + doc 33 §5.3) — written, tested and pushed, NOT deployed.** `@kodekraft/shared` **v0.26.0** (no photo or guest quota, lifetime invitations, retired add-ons
 > `domain`/`gallery`/`guests`, the `login-throttle` module) is a **lockstep** release because of migration **`0037_login_failures.sql`** (a new table; byte-identical in all four repos, in `migrations.lock.json`).
 > Order for Pram: apply `0036` then **`0037`** with `--remote` first → merge/tag/pin → deploy landing → user → admin (worker-undangan only moves its pin and carries the guest "kartu proses") →
