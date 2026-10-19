@@ -35,5 +35,7 @@
   "0034_custom_design.sql": "a5c131708fcdccb700ffd19b030ed62bdbf2aea008716caeb39bc0f4bbc5b9c7",
   "0035_staff_access.sql": "aeb63e89e946cc2dca727f4848419ca87c9c3997bf917891c60d3d7b408925e7",
   "0036_account_hardening.sql": "c01c07986f275165fe06bd4d2288c77d203aa952de7f95ba302342ea4386ad2f",
-  "0037_login_failures.sql": "040fc2cf57711e80c1f7af668af3124e6bd1b4e4edb5e3810576d5988290ce9c"
+  "0037_login_failures.sql": "040fc2cf57711e80c1f7af668af3124e6bd1b4e4edb5e3810576d5988290ce9c",
+  "0038_guest_instagram.sql": "7753c488ea94d26a17f61f69923bfcc8934a55d9dc91908baeabe5018ed37ec0",
+  "0039_admin_role.sql": "c6cbd4c24e9f6ee2a6e5bf2e278a30c9e427f0c50895bdeeb25f3d04501f6633"
 }
